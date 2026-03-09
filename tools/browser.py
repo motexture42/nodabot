@@ -3,7 +3,7 @@ import asyncio
 import base64
 from pathlib import Path
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
+from playwright_stealth import Stealth
 from .base import BaseTool
 from config import Config
 
@@ -62,7 +62,7 @@ class BrowserControllerTool(BaseTool):
             )
             _GLOBAL_PAGE = _GLOBAL_BROWSER_CONTEXT.pages[0]
 
-        await stealth_async(_GLOBAL_PAGE)
+        await Stealth().apply_stealth_async(_GLOBAL_PAGE)
         await _GLOBAL_PAGE.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
     async def _run_async(self, **kwargs):
