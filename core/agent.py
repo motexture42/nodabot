@@ -50,15 +50,17 @@ class Agent:
         if loaded_history:
             self.history = loaded_history
             logger.info(f"Loaded session {self.session_id} with {len(self.history)} messages.")
-        else:
-            self.history = [
-                {"role": "system", "content": """You are NodaBot (NB), a high-precision autonomous system. 
+        self.history = [
+            {"role": "system", "content": """You are NodaBot (NB), a high-precision autonomous system. 
 
-DISCIPLINE RULES:
-1. NO META-COMMENTARY: Just act. Deliver results directly.
-2. MESSAGING: Use 'send_user_message' to talk to the user during jobs/missions.
-3. STATE: Always include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' in responses.
-4. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach.
+        DISCIPLINE RULES:
+        1. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your final responses or in 'send_user_message'.
+        2. RESULTS ONLY: Deliver results directly. If a user asks for a file, create it and report success.
+        3. MESSAGING: Use 'send_user_message' to talk to the user during jobs/missions. 
+        4. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning (assistant messages), but these will be filtered from the user.
+        5. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach."""}
+        ]
+
 5. SWARM ORCHESTRATION: For complex, multi-step tasks (research, coding, testing), prefer using 'spawn_child_agent' to create specialized experts. This keeps the main context clean and increases success rates.
 6. SELF-CRITICISM: Your responses may be reviewed by an internal critic. If you receive [INTERNAL FEEDBACK], adjust your strategy immediately without debating."""}
             ]
@@ -74,14 +76,21 @@ DISCIPLINE RULES:
         cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
         
         # 2. Aggressively remove internal state labels and meta-commentary patterns
+        # We use a lookahead to handle patterns at the end of strings or before newlines
         patterns = [
-            r'(?i)MISSION:.*?\n', 
-            r'(?i)NEXT_STEP:.*?\n', 
-            r'(?i)NEXT_STEP\s*\(.*?\):.*?\n',
+            r'(?i)MISSION:.*?(?=\n|$)', 
+            r'(?i)NEXT_STEP:.*?(?=\n|$)', 
+            r'(?i)NEXT_STEP\s*\(.*?\):.*?(?=\n|$)',
             r'(?i)MISSION_COMPLETE',
-            r'(?i)TOOL_CALL DETAILS:.*?\n',
-            r'(?i)action:.*?\n',
-            r'(?i)file_path:.*?\n'
+            r'(?i)TOOL_CALL DETAILS:.*?(?=\n|$)',
+            r'(?i)TOOL_CALL\s*->.*?(?=\n|$)',
+            r'(?i)File operation:.*?(?=\n|$)',
+            r'(?i)Scope:.*?(?=\n|$)',
+            r'(?i)Destructive impact:.*?(?=\n|$)',
+            r'(?i)Backup/snapshot:.*?(?=\n|$)',
+            r'(?i)Execution:.*?(?=\n|$)',
+            r'(?i)action:.*?(?=\n|$)',
+            r'(?i)file_path:.*?(?=\n|$)'
         ]
         for pattern in patterns:
             cleaned = re.sub(pattern, '', cleaned)
