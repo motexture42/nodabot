@@ -271,10 +271,21 @@ DISCIPLINE RULES:
 
                 if reflection:
                     logger.info(f"Reflection triggered: {reflection}")
-                    # Inject criticism and re-run LLM
+                    # CRITICAL: We cannot append a USER message immediately after tool_calls 
+                    # if we haven't responded to the tool_calls yet.
+                    # We append the response, then dummy responses for the tool calls, then the feedback.
                     self.history.append(response)
-                    # Use a hidden prefix to help the UI filter this out on refresh
-                    self.history.append({"role": "user", "content": f"__INTERNAL_FEEDBACK__: {reflection}\nPlease correct your previous response and proceed."})
+                    
+                    if tool_calls:
+                        for call in tool_calls:
+                            self.history.append({
+                                "role": "tool",
+                                "tool_call_id": call.get("id", "0"),
+                                "name": call["function"]["name"],
+                                "content": f"Cancelled by Internal Critic: {reflection}"
+                            })
+                    
+                    self.history.append({"role": "user", "content": f"__INTERNAL_FEEDBACK__: {reflection}\nPlease adjust your strategy based on the feedback above and try again."})
                     continue 
                 
                 if "MISSION:" in content: 
