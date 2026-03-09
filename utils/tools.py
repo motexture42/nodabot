@@ -7,6 +7,7 @@ from core.llm import LLMProvider
 from tools.spawn import SpawnTool
 from tools.scheduler import SchedulerTool
 from tools.watcher import SystemWatcherTool
+from tools.browser import BrowserControllerTool
 
 def get_tools(emit_cb=None):
     """
@@ -38,6 +39,7 @@ def get_tools(emit_cb=None):
     # Add singleton/orchestrator tools
     tools.append(SchedulerTool())
     tools.append(SystemWatcherTool(emit_cb=emit_cb))
+    tools.append(BrowserControllerTool(emit_cb=emit_cb))
     tools.append(SpawnTool(tools_factory=lambda: get_tools(emit_cb), emit_cb=emit_cb))
     
     return tools

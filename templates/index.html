@@ -553,11 +553,13 @@
             const div = document.createElement('div');
             div.className = "bg-slate-800 p-2 rounded border border-slate-700 shadow-lg group relative overflow-hidden mb-2";
             if (data.type === 'image') {
-                div.innerHTML = `<img src="${data.content}" class="w-full h-auto rounded"><div class="absolute inset-0 bg-blue-600/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><a href="${content}" target="_blank" class="bg-white text-blue-600 px-3 py-1 rounded text-xs font-bold">Open Full</a></div>`;
+                div.innerHTML = `<img src="${data.content}" class="w-full h-auto rounded"><div class="absolute inset-0 bg-blue-600/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><a href="${data.content}" target="_blank" class="bg-white text-blue-600 px-3 py-1 rounded text-xs font-bold">Open Full</a></div>`;
             } else if (data.type === 'code') {
                 div.innerHTML = `<pre class="text-[10px] text-slate-300 overflow-x-auto bg-slate-900 p-2 rounded"><code>${escapeHTML(data.content)}</code></pre>`;
             }
             artifactsBox.appendChild(div);
+            // Switch to artifacts tab automatically
+            switchTab(null, 'artifacts');
         });
 
         function resetSession() { socket.emit('user_message', { message: '/reset' }); }

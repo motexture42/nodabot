@@ -9,3 +9,4 @@ tiktoken
 playwright
 watchdog
 chromadb
+playwright-stealth
