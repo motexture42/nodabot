@@ -31,6 +31,7 @@ class CodeExecutorTool(BaseTool):
     def run(self, code: str, **kwargs) -> str:
         # Create a temporary file to run the code
         fd, path = tempfile.mkstemp(suffix=".py")
+        home_dir = os.path.expanduser("~")
         try:
             with os.fdopen(fd, 'w') as f:
                 f.write(code)
@@ -40,7 +41,8 @@ class CodeExecutorTool(BaseTool):
                 [sys.executable, path],
                 capture_output=True,
                 text=True,
-                timeout=30  # Hard timeout to prevent infinite loops
+                timeout=30,  # Hard timeout to prevent infinite loops
+                cwd=home_dir
             )
             
             output = ""
