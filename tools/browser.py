@@ -3,6 +3,8 @@ import asyncio
 import base64
 import time
 import logging
+import traceback
+import subprocess
 from pathlib import Path
 from playwright.async_api import async_playwright, Page, Frame
 from playwright_stealth import Stealth
@@ -20,7 +22,7 @@ _GLOBAL_LOOP = None
 
 class BrowserControllerTool(BaseTool):
     """
-    Advanced Browser Controller with high-speed accessibility-based discovery.
+    Advanced Browser Controller with zombie process cleanup and verbose logging.
     """
     def __init__(self, emit_cb=None):
         self.emit_cb = emit_cb
@@ -36,11 +38,7 @@ class BrowserControllerTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return (
-            "Control a real web browser. Supports persistent sessions. "
-            "Use 'get_content' to see a fast map of the page. "
-            "For text-based selectors, use 'text=...' or 'span:has-text(\"...\")'."
-        )
+        return "Control a real web browser. Supports persistent sessions and high-speed discovery."
 
     @property
     def parameters(self) -> dict:
@@ -52,48 +50,73 @@ class BrowserControllerTool(BaseTool):
                     "enum": ["navigate", "click", "type", "scroll", "get_content", "screenshot", "close", "refresh"],
                     "description": "The action to perform."
                 },
-                "url": {"type": "string", "description": "URL for navigate."},
-                "selector": {"type": "string", "description": "Selector for click/type."},
-                "text": {"type": "string", "description": "Text to type."},
+                "url": {"type": "string"},
+                "selector": {"type": "string"},
+                "text": {"type": "string"},
                 "wait_seconds": {"type": "integer", "default": 1}
             },
             "required": ["action"]
         }
 
+    def _cleanup_zombie_processes(self):
+        """Forcefully kills any Chromium processes that might be locking the profile."""
+        try:
+            logger.info("Checking for zombie browser processes...")
+            # On macOS/Linux, kill any chromium process related to our profile
+            # We search for the user_data_dir string in the process command line
+            cmd = f"ps aux | grep '{self.user_data_dir}' | grep -v grep | awk '{{print $2}}' | xargs kill -9"
+            subprocess.run(cmd, shell=True, capture_output=True)
+            time.sleep(1)
+        except Exception as e:
+            logger.debug(f"Process cleanup notice: {e}")
+
     async def _init_browser(self, incognito=False):
         global _GLOBAL_PLAYWRIGHT, _GLOBAL_BROWSER_CONTEXT, _GLOBAL_PAGE, _GLOBAL_LOOP
+        
+        # 1. Health Check
         if _GLOBAL_BROWSER_CONTEXT and _GLOBAL_PAGE:
             try:
                 await asyncio.wait_for(_GLOBAL_PAGE.title(), timeout=2.0)
                 return 
             except:
+                logger.warning("Browser unresponsive. Attempting restart...")
                 _GLOBAL_BROWSER_CONTEXT = None
 
-        _GLOBAL_LOOP = asyncio.get_running_loop()
-        _GLOBAL_PLAYWRIGHT = await async_playwright().start()
-        launch_args = ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-infobars"]
-        ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        
-        if incognito:
-            browser = await _GLOBAL_PLAYWRIGHT.chromium.launch(headless=False, args=launch_args)
-            _GLOBAL_BROWSER_CONTEXT = await browser.new_context(viewport={'width': 1280, 'height': 800}, user_agent=ua)
-            _GLOBAL_PAGE = await _GLOBAL_BROWSER_CONTEXT.new_page()
-        else:
-            _GLOBAL_BROWSER_CONTEXT = await _GLOBAL_PLAYWRIGHT.chromium.launch_persistent_context(
-                user_data_dir=str(self.user_data_dir), headless=False, args=launch_args,
-                viewport={'width': 1280, 'height': 800}, user_agent=ua
-            )
-            _GLOBAL_PAGE = _GLOBAL_BROWSER_CONTEXT.pages[0]
-            
-        await Stealth().apply_stealth_async(_GLOBAL_PAGE)
+        # 2. Cleanup before launch
+        self._cleanup_zombie_processes()
 
-    async def _take_safe_screenshot(self, page, filename):
-        filepath = Path(Config.SCREENSHOT_DIR) / filename
+        # 3. Launch
         try:
-            await asyncio.wait_for(page.screenshot(path=str(filepath), timeout=10000), timeout=12.0)
-            self._emit("artifact", {"type": "image", "content": f"/screenshots/{filename}"})
-            return True
-        except: return False
+            _GLOBAL_LOOP = asyncio.get_running_loop()
+            _GLOBAL_PLAYWRIGHT = await async_playwright().start()
+            
+            launch_args = [
+                "--disable-blink-features=AutomationControlled", 
+                "--no-sandbox", 
+                "--disable-infobars"
+            ]
+            ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            
+            if incognito:
+                browser = await _GLOBAL_PLAYWRIGHT.chromium.launch(headless=False, args=launch_args)
+                _GLOBAL_BROWSER_CONTEXT = await browser.new_context(viewport={'width': 1280, 'height': 800}, user_agent=ua)
+                _GLOBAL_PAGE = await _GLOBAL_BROWSER_CONTEXT.new_page()
+            else:
+                _GLOBAL_BROWSER_CONTEXT = await _GLOBAL_PLAYWRIGHT.chromium.launch_persistent_context(
+                    user_data_dir=str(self.user_data_dir),
+                    headless=False,
+                    args=launch_args,
+                    viewport={'width': 1280, 'height': 800},
+                    user_agent=ua
+                )
+                _GLOBAL_PAGE = _GLOBAL_BROWSER_CONTEXT.pages[0]
+                
+            await Stealth().apply_stealth_async(_GLOBAL_PAGE)
+            logger.info("Browser initialized successfully.")
+        except Exception as e:
+            logger.error(f"CRITICAL Browser Init Error: {e}")
+            logger.error(traceback.format_exc())
+            raise
 
     async def _run_async(self, **kwargs):
         global _GLOBAL_PLAYWRIGHT, _GLOBAL_BROWSER_CONTEXT, _GLOBAL_PAGE
@@ -118,9 +141,12 @@ class BrowserControllerTool(BaseTool):
                 url = kwargs.get("url")
                 if not url: return "Error: URL required."
                 if not url.startswith("http"): url = "https://" + url
-                try: await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                except: pass
-                result_msg = f"Navigated to {url}"
+                try: 
+                    await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                    result_msg = f"Navigated to {url}"
+                except Exception as e:
+                    logger.warning(f"Nav timeout: {e}")
+                    result_msg = f"Navigated to {url} (partial)"
                 
             elif action == "refresh":
                 await page.reload(wait_until="domcontentloaded")
@@ -145,13 +171,10 @@ class BrowserControllerTool(BaseTool):
                 result_msg = "Scrolled down."
 
             elif action == "get_content":
-                # ULTRA-FAST: Use Accessibility Tree instead of manual scraping
                 try:
                     title = await asyncio.wait_for(page.title(), timeout=3.0)
-                    # Snapshot the interactive parts of the page
                     snapshot = await asyncio.wait_for(page.accessibility.snapshot(), timeout=5.0)
                     
-                    # Simplify the snapshot for the LLM
                     def simplify(node):
                         res = []
                         if node.get("role") in ["link", "button", "textbox", "checkbox"] or node.get("name"):
@@ -163,22 +186,35 @@ class BrowserControllerTool(BaseTool):
                     elements = simplify(snapshot) if snapshot else []
                     return f"Page: {title} (URL: {page.url})\\n\\nInteractive Elements (Simplified):\\n{elements[:50]}"
                 except Exception as e:
+                    logger.error(f"get_content failed: {e}")
                     return f"Content Error: {str(e)}"
 
             elif action == "screenshot":
                 ts = int(time.time())
-                success = await self._take_safe_screenshot(page, f"manual_{ts}.png")
-                return "Screenshot captured." if success else "Error: Screenshot failed."
+                filepath = Path(Config.SCREENSHOT_DIR) / f"manual_{ts}.png"
+                try:
+                    await asyncio.wait_for(page.screenshot(path=str(filepath), timeout=10000), timeout=12.0)
+                    self._emit("artifact", {"type": "image", "content": f"/screenshots/manual_{ts}.png"})
+                    return "Screenshot captured."
+                except Exception as e:
+                    logger.error(f"Screenshot failed: {e}")
+                    return f"Error: Screenshot failed: {str(e)}"
 
             # Auto-feedback
             if action in ["navigate", "click", "type", "scroll", "refresh"]:
                 await asyncio.sleep(wait_seconds)
                 ts = int(time.time())
-                await self._take_safe_screenshot(page, f"browser_{action}_{ts}.png")
+                filepath = Path(Config.SCREENSHOT_DIR) / f"browser_{action}_{ts}.png"
+                try:
+                    await asyncio.wait_for(page.screenshot(path=str(filepath), timeout=10000), timeout=12.0)
+                    self._emit("artifact", {"type": "image", "content": f"/screenshots/browser_{action}_{ts}.png"})
+                except: pass
                 return f"{result_msg}. Snapshot sent to UI."
 
             return result_msg
         except Exception as e:
+            logger.error(f"Browser action '{action}' failed: {e}")
+            logger.error(traceback.format_exc())
             return f"Browser Error: {str(e)}"
 
     def run(self, **kwargs) -> str:
@@ -186,8 +222,7 @@ class BrowserControllerTool(BaseTool):
         if _GLOBAL_LOOP and _GLOBAL_LOOP.is_running():
             try:
                 future = asyncio.run_coroutine_threadsafe(self._run_async(**kwargs), _GLOBAL_LOOP)
-                # Hard Deadman Switch: 30 seconds max for any browser action
-                return future.result(timeout=30)
+                return future.result(timeout=35)
             except Exception as e:
                 if kwargs.get("action") == "close": _GLOBAL_LOOP = None
                 return f"Browser Error: {str(e)}"
