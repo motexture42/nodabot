@@ -257,10 +257,7 @@ DISCIPLINE RULES:
                 content = response.get("content", "") or ""
                 tool_calls = response.get("tool_calls", [])
 
-                # 1. APPEND ASSISTANT RESPONSE FIRST (Standard Protocol)
-                self.history.append(response)
-
-                # 2. REFLECTION STEP
+                # 1. REFLECTION STEP (Before appending assistant message to history)
                 reflection = None
                 critical_tool = any(t["function"]["name"] in ["execute_shell", "file_manager"] for t in tool_calls)
                 if self.consecutive_failures > 0 or critical_tool:
@@ -269,8 +266,9 @@ DISCIPLINE RULES:
                 
                 if reflection:
                     logger.info(f"Reflection triggered: {reflection}")
+                    # Protocol: Assistant message MUST be followed by tool responses if tool_calls present
+                    self.history.append(response)
                     if tool_calls:
-                        # Protocol: Must respond to tool calls
                         for call in tool_calls:
                             self.history.append({
                                 "role": "tool",
@@ -281,7 +279,10 @@ DISCIPLINE RULES:
                     else:
                         # No tools, just append user feedback
                         self.history.append({"role": "user", "content": f"__INTERNAL_FEEDBACK__: {reflection}\nPlease correct your response."})
-                    continue # Start next turn with the feedback in history
+                    continue # Re-run loop with feedback
+
+                # 2. STANDARD PATH (APPROVED OR NO REFLECTION)
+                self.history.append(response)
 
                 # MISSION Tracking
                 if "MISSION:" in content: 
