@@ -1,6 +1,7 @@
 import os
 import asyncio
 import base64
+import time
 from pathlib import Path
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
@@ -34,8 +35,9 @@ class BrowserControllerTool(BaseTool):
     def description(self) -> str:
         return (
             "Control a real web browser to navigate, click, type, and scrape data. "
-            "Supports persistent sessions (cookies/login) and incognito mode. "
-            "Use this for complex web tasks, logging into sites, or advanced research."
+            "Supports persistent sessions and incognito mode. "
+            "IMPORTANT: For text-based selectors, use 'text=...' or 'span:has-text(\"...\")'. "
+            "Avoid using ':contains()'."
         )
 
     @property
@@ -110,39 +112,60 @@ class BrowserControllerTool(BaseTool):
             await self._init_browser(incognito=incognito)
             page = _GLOBAL_PAGE
             
+            result_msg = ""
+            
+            # Smart Selector Translation: fix common LLM hallucination (:contains -> :has-text)
+            selector = kwargs.get("selector")
+            if selector and ":contains(" in selector:
+                selector = selector.replace(":contains(", ":has-text(")
+            
             if action == "navigate":
                 url = kwargs.get("url")
                 if not url: return "Error: URL is required."
                 if not url.startswith("http"): url = "https://" + url
                 await page.goto(url, wait_until="networkidle", timeout=60000)
+                result_msg = f"Navigated to {url}"
                 
             elif action == "click":
-                selector = kwargs.get("selector")
                 if not selector: return "Error: Selector required."
-                await page.click(selector, timeout=10000)
+                await page.wait_for_selector(selector, state="visible", timeout=10000)
+                await page.click(selector, timeout=10000, force=True)
+                result_msg = f"Clicked {selector}"
 
             elif action == "type":
-                selector = kwargs.get("selector")
                 text = kwargs.get("text")
                 if not selector or not text: return "Error: Selector/Text required."
+                await page.wait_for_selector(selector, state="visible", timeout=10000)
                 await page.fill(selector, text, timeout=10000)
                 if "search" in selector.lower() or "input" in selector.lower():
                     await page.press(selector, "Enter")
+                result_msg = f"Typed text into {selector}"
+
+            elif action == "scroll":
+                await page.evaluate("window.scrollBy(0, 500)")
+                result_msg = "Scrolled down 500px."
 
             elif action == "get_content":
-                # Returns a simplified version of the page for the LLM to read
                 title = await page.title()
-                # Get all interactive elements
                 elements = await page.evaluate('''() => {
-                    const items = Array.from(document.querySelectorAll('button, a, input, [role="button"]'));
+                    const items = Array.from(document.querySelectorAll('button, a, input, [role="button"], [aria-label]'));
                     return items.map(el => ({
                         tag: el.tagName.toLowerCase(),
-                        text: (el.innerText || el.placeholder || el.value || "").substring(0, 50).trim(),
+                        text: (el.innerText || el.placeholder || el.value || el.getAttribute('aria-label') || "").substring(0, 100).trim(),
                         id: el.id,
-                        class: el.className.substring(0, 50)
-                    })).filter(i => i.text.length > 0).slice(0, 30);
+                        class: el.className.substring(0, 50),
+                        role: el.getAttribute('role')
+                    })).filter(i => (i.text.length > 0 || i.id)).slice(0, 50);
                 }''')
-                return f"Page: {title}\\n\\nInteractive Elements:\\n{elements}"
+                return f"Page: {title}\\n\\nInteractive Elements Map:\\n{elements}"
+
+            elif action == "screenshot":
+                timestamp = int(time.time())
+                filename = f"manual_{timestamp}.png"
+                filepath = Path(Config.SCREENSHOT_DIR) / filename
+                await page.screenshot(path=str(filepath))
+                self._emit("artifact", {"type": "image", "content": f"/screenshots/{filename}"})
+                return f"Manual screenshot saved as {filename}"
 
             elif action == "close":
                 if _GLOBAL_BROWSER_CONTEXT:
@@ -152,22 +175,23 @@ class BrowserControllerTool(BaseTool):
                 _GLOBAL_BROWSER_CONTEXT = _GLOBAL_PLAYWRIGHT = _GLOBAL_PAGE = None
                 return "Browser closed."
 
-            # Default: Return status + screenshot
-            await asyncio.sleep(wait_seconds)
-            timestamp = int(os.time.time()) if hasattr(os, 'time') else "now"
-            filename = f"browser_{action}_{timestamp}.png"
-            filepath = Path(Config.SCREENSHOT_DIR) / filename
-            await page.screenshot(path=str(filepath))
-            self._emit("artifact", {"type": "image", "content": f"/screenshots/{filename}"})
-            
-            title = await page.title()
-            return f"Action '{action}' performed on '{title}'. Please see the screenshot in the UI to decide the next step."
+            # Auto-feedback logic for interactive actions
+            if action in ["navigate", "click", "type", "scroll"]:
+                await asyncio.sleep(wait_seconds)
+                timestamp = int(time.time())
+                filename = f"browser_{action}_{timestamp}.png"
+                filepath = Path(Config.SCREENSHOT_DIR) / filename
+                await page.screenshot(path=str(filepath))
+                self._emit("artifact", {"type": "image", "content": f"/screenshots/{filename}"})
+                title = await page.title()
+                return f"{result_msg} on '{title}'. Snapshot sent to UI. Use 'get_content' to see updated element map if needed."
+
+            return result_msg
 
         except Exception as e:
             return f"Browser Error: {str(e)}"
 
     def run(self, **kwargs) -> str:
-        # Standard sync wrapper for the async browser logic
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:

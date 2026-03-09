@@ -301,7 +301,12 @@ DISCIPLINE RULES:
                         self.history.append({"role": "tool", "tool_call_id": call.get("id", "0"), "name": tool_name, "content": obs})
                         continue
 
-                    self._emit("agent_status", {"agent": self.name, "status": "executing", "tool": tool_name})
+                    self._emit("agent_status", {
+                        "agent": self.name, 
+                        "status": "executing", 
+                        "tool": tool_name,
+                        "args": tool_args
+                    })
                     self._emit("tool_start", {"agent": self.name, "tool": tool_name, "args": tool_args})
                     logger.info(f"Tool Call: {tool_name}({tool_args})")
                     

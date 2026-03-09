@@ -176,7 +176,7 @@
             if (indicator) indicator.remove();
         }
 
-        function showStatusBubble(status, toolName = '') {
+        function showStatusBubble(status, toolName = '', toolArgs = {}) {
             removeStatusBubble();
             const div = document.createElement('div');
             div.id = 'status-bubble';
@@ -191,6 +191,27 @@
             } else if (status === 'executing') {
                 icon = 'fa-gear fa-spin text-emerald-400';
                 text = `Executing ${toolName.replace('_', ' ')}...`;
+                
+                // Specific Browser Controller Logic
+                if (toolName === 'browser_controller' && toolArgs.action) {
+                    const action = toolArgs.action;
+                    if (action === 'navigate') {
+                        text = `Navigating to ${toolArgs.url || 'URL'}...`;
+                        icon = 'fa-compass fa-spin text-blue-400';
+                    } else if (action === 'click') {
+                        text = `Clicking element...`;
+                        icon = 'fa-arrow-pointer animate-bounce text-emerald-400';
+                    } else if (action === 'type') {
+                        text = `Typing into form...`;
+                        icon = 'fa-keyboard animate-pulse text-emerald-400';
+                    } else if (action === 'get_content') {
+                        text = `Reading page content...`;
+                        icon = 'fa-file-lines animate-pulse text-blue-400';
+                    }
+                } else if (toolName === 'execute_shell') {
+                    text = 'Running shell command...';
+                    icon = 'fa-terminal text-emerald-400';
+                }
             }
             
             div.innerHTML = `
@@ -514,7 +535,7 @@
                 hideTypingIndicator();
             } else {
                 hideTypingIndicator();
-                showStatusBubble(data.status, data.tool || '');
+                showStatusBubble(data.status, data.tool || '', data.args || {});
             }
         });
 
