@@ -190,7 +190,15 @@ class BrowserControllerTool(BaseTool):
             elif action == "screenshot":
                 ts = int(time.time())
                 filename = f"manual_{ts}.png"
-                await page.screenshot(path=str(Path(Config.SCREENSHOT_DIR) / filename))
+                filepath = Path(Config.SCREENSHOT_DIR) / filename
+                # Try capture with timeout
+                try:
+                    await page.screenshot(path=str(filepath), timeout=10000)
+                except Exception as e:
+                    logger.warning(f"Screenshot failed, retrying... {e}")
+                    await asyncio.sleep(1)
+                    await page.screenshot(path=str(filepath), timeout=10000)
+                
                 self._emit("artifact", {"type": "image", "content": f"/screenshots/{filename}"})
                 return f"Screenshot saved: {filename}"
 

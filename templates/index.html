@@ -550,7 +550,7 @@
                 removeStatusBubble();
                 hideTypingIndicator();
             } else {
-                hideTypingIndicator();
+                // Keep typing indicator, but update/show status bubble
                 showStatusBubble(data.status, data.tool || '', data.args || {});
             }
         });
@@ -576,7 +576,6 @@
 
         socket.on('tool_start', data => {
             const tid = 'tool-' + Date.now();
-            hideTypingIndicator();
             removeStatusBubble();
             renderToolStart(data.agent, data.tool, data.args, tid);
             window._lastId = tid;
