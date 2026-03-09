@@ -73,14 +73,20 @@ DISCIPLINE RULES:
         # 1. Remove reasoning tags
         cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
         
-        # 2. Remove internal state labels (MISSION, NEXT_STEP, MISSION_COMPLETE)
-        lines = []
-        for line in cleaned.split('\n'):
-            if any(marker in line for marker in ["MISSION:", "NEXT_STEP:", "MISSION_COMPLETE"]):
-                continue
-            lines.append(line)
+        # 2. Aggressively remove internal state labels and meta-commentary patterns
+        patterns = [
+            r'(?i)MISSION:.*?\n', 
+            r'(?i)NEXT_STEP:.*?\n', 
+            r'(?i)NEXT_STEP\s*\(.*?\):.*?\n',
+            r'(?i)MISSION_COMPLETE',
+            r'(?i)TOOL_CALL DETAILS:.*?\n',
+            r'(?i)action:.*?\n',
+            r'(?i)file_path:.*?\n'
+        ]
+        for pattern in patterns:
+            cleaned = re.sub(pattern, '', cleaned)
         
-        return "\n".join(lines).strip()
+        return cleaned.strip()
 
     def _count_tokens(self, text: str) -> int:
         try:
@@ -357,7 +363,9 @@ DISCIPLINE RULES:
                         self.consecutive_failures = 0 # Reset on success
                     
                     if tool_name == "send_user_message": 
-                        self._emit("agent_reply", {"agent": self.name, "content": tool_args.get("message", "")})
+                        cleaned_msg = self._clean_content(tool_args.get("message", ""))
+                        if cleaned_msg:
+                            self._emit("agent_reply", {"agent": self.name, "content": cleaned_msg})
                     if tool_name == "manage_jobs": 
                         self._emit("jobs_update", {"jobs": tool.jobs})
 
