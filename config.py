@@ -1,0 +1,26 @@
+# Configuration for the local LLM endpoint
+import os
+from dotenv import load_dotenv
+
+# Load .env if it exists
+load_dotenv()
+
+class Config:
+    # LLM Settings
+    BASE_URL = os.getenv("LLM_BASE_URL", "http://127.0.0.1:1234/v1")
+    API_KEY = os.getenv("LLM_API_KEY", "VLLM_API_KEY")
+    DEFAULT_MODEL = os.getenv("LLM_MODEL", "qwen3.5-9b-mlx")
+    VISION_MODEL = os.getenv("VISION_MODEL", "qwen2-vl-7b-instruct")
+    
+    # Flask Settings
+    SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "nodabot-dev-secret")
+    PORT = int(os.getenv("FLASK_PORT", 5001))
+    DEBUG = os.getenv("FLASK_DEBUG", "True").lower() == "true"
+    
+    # Paths
+    SCREENSHOT_DIR = os.getenv("SCREENSHOT_DIR", "screenshots")
+    SESSIONS_DIR = os.getenv("SESSIONS_DIR", "sessions")
+    
+    # Execution Limits
+    MAX_TURNS = int(os.getenv("MAX_TURNS", 15))
+    TIMEOUT = int(os.getenv("TIMEOUT", 300))

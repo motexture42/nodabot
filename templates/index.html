@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NodaBot (NB) Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+        .chat-bubble { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .agent-node { transition: all 0.3s; border-left: 2px solid #3b82f6; }
+        .tool-card { font-size: 0.85rem; background: #1e293b; border: 1px solid #334155; transition: all 0.2s; }
+        .tool-card:hover { border-color: #475569; background: #243147; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        
+        .typing-dot { width: 6px; height: 6px; background: #94a3b8; border-radius: 50%; display: inline-block; animation: typing 1.4s infinite; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; margin-left: 4px; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; margin-left: 4px; }
+        @keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-4px); opacity: 1; } }
+
+        .markdown-content h1 { font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem; color: white; }
+        .markdown-content p { margin-bottom: 0.8rem; line-height: 1.6; }
+        .markdown-content code { background: #0f172a; padding: 0.1rem 0.3rem; border-radius: 0.25rem; color: #fb7185; font-family: monospace; }
+        .markdown-content pre { background: #0f172a; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; border: 1px solid #334155; }
+        
+        .tab-btn.active { border-bottom: 2px solid #3b82f6; color: #3b82f6; font-weight: bold; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        @keyframes pulse-heart {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.3); opacity: 0.7; color: #ef4444; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .heart-active { animation: pulse-heart 0.8s ease-in-out; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <header class="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center shadow-md z-10">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold relative">
+                NB
+                <div id="heartbeat-dot" class="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-900 hidden"></div>
+            </div>
+            <h1 class="text-xl font-semibold tracking-tight text-white flex items-center gap-2">
+                NodaBot Central
+                <i id="heart-icon" class="fa-solid fa-heart text-slate-700 text-xs transition-colors duration-500"></i>
+            </h1>
+        </div>
+        
+        <!-- Mission Board -->
+        <div id="mission-board" class="hidden flex-1 mx-10 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 flex items-center gap-4 animate-fadeIn">
+            <div class="shrink-0 text-[10px] uppercase font-bold text-blue-400 tracking-tighter">Active Mission</div>
+            <div id="mission-text" class="text-sm font-medium text-slate-200 truncate flex-1 italic">None</div>
+            <div class="h-4 w-[1px] bg-slate-700"></div>
+            <div class="shrink-0 text-[10px] uppercase font-bold text-emerald-400 tracking-tighter">Next Action</div>
+            <div id="next-step-text" class="text-xs text-slate-400 truncate flex-1">Awaiting input...</div>
+        </div>
+
+        <div class="flex items-center gap-4 text-sm text-slate-400">
+            <button type="button" onclick="resetSession()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded transition border border-slate-700">
+                <i class="fa-solid fa-rotate-right mr-1"></i> Reset
+            </button>
+        </div>
+    </header>
+
+    <div class="flex-1 flex overflow-hidden">
+        
+        <div class="w-1/2 flex flex-col border-r border-slate-800 bg-slate-900 shadow-xl">
+            <div id="chatBox" class="flex-1 p-6 overflow-y-auto space-y-6 scroll-smooth">
+            </div>
+            
+            <div class="p-4 bg-slate-900 border-t border-slate-800">
+                <form id="chatForm" class="relative" onsubmit="submitMessage(event)">
+                    <input type="text" id="userInput" placeholder="Give a task..." 
+                        class="w-full bg-slate-800 border border-slate-700 text-white rounded-lg pl-4 pr-12 py-3 focus:outline-none focus:border-blue-500">
+                    <button type="submit" class="absolute right-2 top-2 bg-blue-600 hover:bg-blue-500 text-white w-8 h-8 rounded flex items-center justify-center">
+                        <i class="fa-solid fa-paper-plane text-sm"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="w-1/2 flex flex-col bg-[#0b1121] relative overflow-hidden">
+            <div class="p-0 border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-10 flex justify-between items-end">
+                <div class="flex gap-4 px-4 pt-4">
+                    <button type="button" class="tab-btn active pb-2 text-sm text-slate-400" onclick="switchTab(event, 'flow')"><i class="fa-solid fa-users-viewfinder mr-1"></i> Swarm</button>
+                    <button type="button" class="tab-btn pb-2 text-sm text-slate-400" onclick="switchTab(event, 'jobs')"><i class="fa-solid fa-clock mr-1"></i> Jobs</button>
+                    <button type="button" class="tab-btn pb-2 text-sm text-slate-400" onclick="switchTab(event, 'watchers')"><i class="fa-solid fa-eye mr-1"></i> Watchers</button>
+                    <button type="button" class="tab-btn pb-2 text-sm text-slate-400" onclick="switchTab(event, 'terminal')"><i class="fa-solid fa-terminal mr-1"></i> Terminal</button>
+                    <button type="button" class="tab-btn pb-2 text-sm text-slate-400" onclick="switchTab(event, 'artifacts')"><i class="fa-solid fa-box-open mr-1"></i> Artifacts</button>
+                </div>
+                <div class="pb-2 pr-4">
+                    <span id="turnCounter" class="text-xs font-mono text-slate-500 bg-slate-800 px-2 py-1 rounded">Idle</span>
+                </div>
+            </div>
+            
+            <div id="flow-tab" class="tab-content active flex-1 p-6 overflow-y-auto space-y-6">
+            </div>
+
+            <div id="jobs-tab" class="tab-content flex-1 p-6 overflow-y-auto space-y-4">
+                <div id="jobsBox" class="space-y-3">
+                    <p class="text-slate-500 italic text-sm">No scheduled jobs.</p>
+                </div>
+            </div>
+
+            <div id="watchers-tab" class="tab-content flex-1 p-6 overflow-y-auto space-y-4">
+                <div id="watchersBox" class="space-y-3">
+                    <p class="text-slate-500 italic text-sm">No active watchers.</p>
+                </div>
+            </div>
+
+            <div id="terminal-tab" class="tab-content flex-1 p-4 overflow-y-auto bg-black font-mono text-green-400 text-sm">
+                <div id="terminalBox"></div>
+            </div>
+
+            <div id="artifacts-tab" class="tab-content flex-1 p-6 overflow-y-auto">
+                <div id="artifactsBox" class="grid grid-cols-2 gap-4"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const chatBox = document.getElementById('chatBox');
+        const flowTab = document.getElementById('flow-tab');
+        const jobsBox = document.getElementById('jobsBox');
+        const watchersBox = document.getElementById('watchersBox');
+        const terminalBox = document.getElementById('terminalBox');
+        const artifactsBox = document.getElementById('artifactsBox');
+        const userInput = document.getElementById('userInput');
+        const turnCounter = document.getElementById('turnCounter');
+        
+        const heartIcon = document.getElementById('heart-icon');
+        const heartbeatDot = document.getElementById('heartbeat-dot');
+        const missionBoard = document.getElementById('mission-board');
+        const missionText = document.getElementById('mission-text');
+        const nextStepText = document.getElementById('next-step-text');
+
+        function switchTab(event, tabId) {
+            if (event) event.preventDefault();
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId + '-tab').classList.add('active');
+            if (event) event.currentTarget.classList.add('active');
+        }
+
+        function showTypingIndicator() {
+            if (document.getElementById('typing-indicator')) return;
+            const div = document.createElement('div');
+            div.id = 'typing-indicator';
+            div.className = 'flex items-start gap-4 chat-bubble';
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded bg-blue-600 flex items-center justify-center shrink-0 font-bold">NB</div>
+                <div class="bg-slate-800 p-4 rounded-lg rounded-tl-none shadow-md border border-slate-700">
+                    <div class="flex items-center space-x-1">
+                        <span class="typing-dot"></span>
+                        <span class="typing-dot"></span>
+                        <span class="typing-dot"></span>
+                    </div>
+                </div>
+            `;
+            chatBox.appendChild(div);
+            scrollToBottom(chatBox);
+        }
+
+        function hideTypingIndicator() {
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) indicator.remove();
+        }
+
+        function submitMessage(event) {
+            event.preventDefault();
+            const msg = userInput.value.trim();
+            if (msg) {
+                socket.emit('user_message', { message: msg });
+                userInput.value = '';
+                showTypingIndicator();
+            }
+            return false;
+        }
+
+        function scrollToBottom(el) { el.scrollTop = el.scrollHeight; }
+        function escapeHTML(str) {
+            return String(str).replace(/[&<>'"]/g, tag => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            }[tag]));
+        }
+
+        function renderCriticism(content) {
+            const flowTab = document.getElementById('flow-tab');
+            const div = document.createElement('div');
+            div.className = "p-4 bg-red-900/20 border border-red-500/30 rounded-lg mb-4 animate-fadeIn shadow-lg";
+            div.innerHTML = `
+                <div class="flex items-center gap-2 mb-2 text-red-400 font-bold text-xs uppercase tracking-widest">
+                    <i class="fa-solid fa-shield-halved"></i> Internal Critic Feedback
+                </div>
+                <div class="text-xs text-slate-300 italic leading-relaxed whitespace-pre-wrap">${content}</div>
+            `;
+            flowTab.appendChild(div);
+            scrollToBottom(flowTab);
+            
+            // Pulse the Swarm tab button if it's not active
+            const flowBtn = document.querySelector('button[onclick*="flow"]');
+            if (!flowBtn.classList.contains('active')) {
+                flowBtn.classList.add('animate-pulse', 'text-red-400');
+                setTimeout(() => {
+                    flowBtn.classList.remove('animate-pulse', 'text-red-400');
+                }, 3000);
+            }
+        }
+
+        function appendChatMessage(role, content, agentName = 'Main') {
+            // Hide internal feedback messages
+            if (content.startsWith('__INTERNAL_FEEDBACK__')) return;
+            
+            if (agentName === 'Internal Critic') return;
+
+            const div = document.createElement('div');
+            div.className = `flex items-start gap-4 chat-bubble ${role === 'user' ? 'flex-row-reverse' : ''}`;
+            const isUser = role === 'user';
+            const avatarColor = isUser ? 'bg-slate-600' : 'bg-blue-600';
+            const avatarIcon = isUser ? 'U' : 'NB';
+            
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded ${avatarColor} flex items-center justify-center shrink-0 font-bold">${avatarIcon}</div>
+                <div class="p-4 rounded-lg shadow-md border max-w-[85%] ${isUser ? 'bg-blue-900/20' : 'bg-slate-800'}">
+                    <div class="markdown-content text-slate-200 text-sm">${isUser ? escapeHTML(content) : marked.parse(content)}</div>
+                </div>
+            `;
+            chatBox.appendChild(div);
+            scrollToBottom(chatBox);
+        }
+
+        function getAgentNode(agentName) {
+            let node = document.getElementById(`agent-${agentName}`);
+            if (!node) {
+                node = document.createElement('div');
+                node.id = `agent-${agentName}`;
+                node.className = 'agent-node pl-4 ml-4 mt-4 relative before:absolute before:content-[""] before:w-4 before:h-[2px] before:bg-slate-700 before:top-4 before:-left-4';
+                
+                let iconColor = "text-purple-400";
+                if(agentName.includes("Research")) iconColor = "text-emerald-400";
+                if(agentName.includes("Write")) iconColor = "text-orange-400";
+                if(agentName.includes("Code")) iconColor = "text-cyan-400";
+                if(agentName === "Main") iconColor = "text-blue-500";
+
+                node.innerHTML = `
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fa-solid fa-microchip ${iconColor}"></i>
+                        <span class="font-bold text-slate-200">${agentName}</span>
+                        <span id="status-${agentName}" class="text-[10px] uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 animate-pulse">Active</span>
+                    </div>
+                    <div class="text-xs text-slate-400 mb-3 ml-1 task-desc italic"></div>
+                    <div class="agent-activity space-y-2 ml-4 border-l border-slate-800 pl-4"></div>
+                `;
+                
+                if (agentName === 'Main') {
+                    flowTab.appendChild(node);
+                } else {
+                    const mainActivity = document.querySelector('#agent-Main .agent-activity');
+                    if(mainActivity) mainActivity.appendChild(node);
+                    else flowTab.appendChild(node);
+                }
+            }
+            return node.querySelector('.agent-activity');
+        }
+
+        function renderToolStart(agent, tool, args, id) {
+            const activityBox = getAgentNode(agent);
+            let icon = 'fa-wrench';
+            let detail = 'Working...';
+            
+            if (tool === 'execute_shell') { icon = 'fa-terminal text-purple-400'; detail = `Running: <code class="text-purple-300">${args.command}</code>`; }
+            else if (tool === 'execute_python') { icon = 'fa-python text-blue-400'; detail = `Executing Python Script`; }
+            else if (tool === 'knowledge_base') { icon = 'fa-database text-green-400'; detail = `${args.action === 'search' ? 'Searching' : 'Indexing'} memory`; }
+            else if (tool === 'system_monitor') { icon = 'fa-desktop text-gray-400'; detail = `Checking system health`; }
+            else if (tool === 'manage_jobs') { icon = 'fa-clock text-pink-400'; detail = `${args.action} job: ${args.task || args.job_id}`; }
+            else if (tool === 'manage_watchers') { icon = 'fa-eye text-indigo-400'; detail = `${args.action} watcher on ${args.path || args.watcher_id}`; }
+            else if (tool === 'web_search') { icon = 'fa-magnifying-glass text-emerald-400'; detail = `Searching web for <i class="text-emerald-300">"${args.query}"</i>`; }
+            else if (tool === 'fetch_url') { icon = 'fa-globe text-cyan-400'; detail = `Fetching <span class="text-cyan-300">${args.url}</span>`; }
+            else if (tool === 'file_manager') { icon = 'fa-file-lines text-amber-400'; detail = `${args.action} ${args.path || ''}`; }
+            else if (tool === 'generate_response') { icon = 'fa-brain text-yellow-400'; detail = `Formulating final response`; }
+
+            const div = document.createElement('div');
+            div.id = id;
+            div.className = "tool-card p-3 rounded-lg border border-slate-700 mb-2 animate-fadeIn";
+            div.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid ${icon} w-5 text-center"></i>
+                    <div class="flex-1">
+                        <div class="text-[10px] uppercase font-bold text-slate-500 mb-0.5 tracking-wider">${tool.replace('_', ' ')}</div>
+                        <div class="text-xs text-slate-300 leading-relaxed">${detail}</div>
+                    </div>
+                    <div class="status-icon"><i class="fa-solid fa-spinner fa-spin text-slate-600"></i></div>
+                </div>
+                <div class="tool-result-mini mt-2 hidden text-[10px] text-slate-500 border-t border-slate-800 pt-2 italic line-clamp-2"></div>
+            `;
+            activityBox.appendChild(div);
+            scrollToBottom(flowTab);
+
+            if (tool === 'execute_shell' || tool === 'execute_python') {
+                const line = document.createElement('div');
+                line.className = "text-slate-500 border-l-2 border-blue-500 pl-2 mb-1 mt-2";
+                line.innerHTML = `<span class="text-blue-400/50">[LOG]</span> $ ${tool === 'execute_shell' ? args.command : 'Executing python script...'}`;
+                terminalBox.appendChild(line);
+                scrollToBottom(document.getElementById('terminal-tab'));
+            }
+        }
+
+        function renderToolEnd(id, tool, result) {
+            const toolDiv = document.getElementById(id);
+            if (toolDiv) {
+                const statusIcon = toolDiv.querySelector('.status-icon');
+                statusIcon.innerHTML = `<i class="fa-solid fa-check text-emerald-500"></i>`;
+                const resultMini = toolDiv.querySelector('.tool-result-mini');
+                resultMini.classList.remove('hidden');
+                resultMini.innerText = "Output: " + String(result).substring(0, 150) + (String(result).length > 150 ? '...' : '');
+            }
+
+            if (tool === 'execute_shell' || tool === 'execute_python') {
+                const line = document.createElement('div');
+                line.className = "mb-4 text-white whitespace-pre-wrap font-mono text-[12px] bg-slate-900/50 p-2 rounded border border-slate-800";
+                line.innerText = result;
+                terminalBox.appendChild(line);
+                scrollToBottom(document.getElementById('terminal-tab'));
+            }
+        }
+
+        socket.on('session_history', data => {
+            chatBox.innerHTML = '';
+            flowTab.innerHTML = '';
+            terminalBox.innerHTML = '';
+            artifactsBox.innerHTML = '';
+            const history = data.history || [];
+            history.forEach(msg => {
+                if (msg.role === 'user') appendChatMessage('user', msg.content);
+                else if (msg.role === 'assistant') {
+                    if (msg.content) {
+                        const cleaned = msg.content.replace(/<think>.*?<\/think>/gs, '').trim();
+                        if (cleaned) appendChatMessage('assistant', cleaned);
+                    }
+                    if (msg.tool_calls) {
+                        msg.tool_calls.forEach(call => {
+                            const tName = call.function.name;
+                            const tArgs = JSON.parse(call.function.arguments);
+                            renderToolStart('Main', tName, tArgs, call.id);
+                            const out = history.find(m => m.role === 'tool' && m.tool_call_id === call.id);
+                            if (out) renderToolEnd(call.id, tName, out.content);
+                        });
+                    }
+                }
+            });
+        });
+
+        socket.on('heartbeat', data => {
+            heartIcon.classList.add('heart-active');
+            heartbeatDot.classList.remove('hidden');
+            setTimeout(() => {
+                heartIcon.classList.remove('heart-active');
+                heartbeatDot.classList.add('hidden');
+            }, 800);
+        });
+
+        socket.on('mission_update', data => {
+            if (data.mission) {
+                missionBoard.classList.remove('hidden');
+                missionText.innerText = data.mission;
+                nextStepText.innerText = data.next_step || 'Planning...';
+            } else {
+                missionBoard.classList.add('hidden');
+            }
+        });
+
+        socket.on('jobs_update', data => {
+            jobsBox.innerHTML = '';
+            const jobs = data.jobs || {};
+            if (Object.keys(jobs).length === 0) {
+                jobsBox.innerHTML = '<p class="text-slate-500 italic text-sm">No scheduled jobs.</p>';
+                return;
+            }
+            for (const [id, job] of Object.entries(jobs)) {
+                const div = document.createElement('div');
+                div.className = "bg-slate-800 border border-slate-700 p-3 rounded-lg shadow-sm animate-fadeIn group";
+                div.innerHTML = `
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs font-bold text-pink-400 font-mono">${id}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-500">Every ${job.interval}s</span>
+                            <button onclick="removeJob('${id}')" class="text-slate-500 hover:text-red-400 transition-colors">
+                                <i class="fa-solid fa-circle-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="text-sm text-slate-200 mb-2">${job.task}</div>
+                    <div class="flex items-center gap-2 text-[10px] text-slate-500">
+                        <i class="fa-solid fa-clock"></i> Next run: ${new Date(job.next_run * 1000).toLocaleTimeString()}
+                    </div>
+                `;
+                jobsBox.appendChild(div);
+            }
+        });
+
+        socket.on('watchers_update', data => {
+            watchersBox.innerHTML = '';
+            const watchers = data.watchers || {};
+            if (Object.keys(watchers).length === 0) {
+                watchersBox.innerHTML = '<p class="text-slate-500 italic text-sm">No active watchers.</p>';
+                return;
+            }
+            for (const [id, w] of Object.entries(watchers)) {
+                const div = document.createElement('div');
+                div.className = "bg-slate-800 border border-slate-700 p-3 rounded-lg shadow-sm animate-fadeIn group";
+                div.innerHTML = `
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-xs font-bold text-indigo-400 font-mono">${id}</span>
+                        <button onclick="removeWatcher('${id}')" class="text-slate-500 hover:text-red-400 transition-colors">
+                            <i class="fa-solid fa-circle-xmark"></i>
+                        </button>
+                    </div>
+                    <div class="text-[10px] text-slate-500 mb-1 truncate">${w.path}</div>
+                    <div class="text-sm text-slate-200 mb-2">${w.task}</div>
+                    <div class="flex items-center gap-2 text-[10px] text-green-500">
+                        <i class="fa-solid fa-circle-play text-[8px] animate-pulse"></i> Monitoring...
+                    </div>
+                `;
+                watchersBox.appendChild(div);
+            }
+        });
+
+        function removeJob(jobId) { socket.emit('remove_job', { job_id: jobId }); }
+        function removeWatcher(watcherId) { socket.emit('remove_watcher', { watcher_id: watcherId }); }
+
+        socket.on('agent_start', data => {
+            const act = getAgentNode(data.agent);
+            const node = act.parentElement;
+            const desc = node.querySelector('.task-desc');
+            if(desc && data.task) desc.innerHTML = `<i class="fa-solid fa-bullseye text-slate-600 mr-1"></i> ${escapeHTML(data.task)}`;
+            scrollToBottom(flowTab);
+        });
+
+        socket.on('agent_end', data => {
+            const statusBadge = document.getElementById(`status-${data.agent}`);
+            const node = document.getElementById(`agent-${data.agent}`);
+            if(statusBadge) {
+                statusBadge.classList.remove('bg-amber-500/20', 'text-amber-400', 'animate-pulse');
+                if(data.status === 'success') {
+                    statusBadge.innerText = "Done";
+                    statusBadge.classList.add('bg-emerald-500/20', 'text-emerald-400');
+                    if(node) node.classList.add('success');
+                } else {
+                    statusBadge.innerText = "Error";
+                    statusBadge.classList.add('bg-red-500/20', 'text-red-400');
+                    if(node) node.classList.add('error');
+                }
+            }
+        });
+
+        socket.on('chat_message', data => {
+            if (data.role === 'user') hideTypingIndicator();
+            appendChatMessage(data.role, data.content, data.agent || 'Main');
+            if (data.role === 'user') showTypingIndicator();
+        });
+
+        socket.on('agent_reply', data => {
+            hideTypingIndicator();
+            appendChatMessage('assistant', data.content, data.agent || 'Main');
+        });
+
+        socket.on('system_msg', data => {
+            if (data.message.toLowerCase().includes("reset")) {
+                chatBox.innerHTML = '';
+                appendChatMessage('assistant', 'System reset.', 'Main');
+                flowTab.innerHTML = '';
+                jobsBox.innerHTML = '<p class="text-slate-500 italic text-sm">No scheduled jobs.</p>';
+                watchersBox.innerHTML = '<p class="text-slate-500 italic text-sm">No active watchers.</p>';
+                terminalBox.innerHTML = '';
+                artifactsBox.innerHTML = '';
+                missionBoard.classList.add('hidden');
+                hideTypingIndicator();
+                turnCounter.innerText = "Idle";
+            }
+        });
+
+        socket.on('turn_update', data => {
+            turnCounter.innerText = `${data.agent} - Turn ${data.turn}`;
+        });
+
+        socket.on('tool_start', data => {
+            const tid = 'tool-' + Date.now();
+            renderToolStart(data.agent, data.tool, data.args, tid);
+            window._lastId = tid;
+        });
+
+        socket.on('tool_end', data => {
+            renderToolEnd(window._lastId, data.tool, data.result);
+        });
+
+        socket.on('artifact', data => {
+            const div = document.createElement('div');
+            div.className = "bg-slate-800 p-2 rounded border border-slate-700 shadow-lg group relative overflow-hidden mb-2";
+            if (data.type === 'image') {
+                div.innerHTML = `<img src="${data.content}" class="w-full h-auto rounded"><div class="absolute inset-0 bg-blue-600/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><a href="${content}" target="_blank" class="bg-white text-blue-600 px-3 py-1 rounded text-xs font-bold">Open Full</a></div>`;
+            } else if (data.type === 'code') {
+                div.innerHTML = `<pre class="text-[10px] text-slate-300 overflow-x-auto bg-slate-900 p-2 rounded"><code>${escapeHTML(data.content)}</code></pre>`;
+            }
+            artifactsBox.appendChild(div);
+        });
+
+        function resetSession() { socket.emit('user_message', { message: '/reset' }); }
+    </script>
+</body>
+</html>
