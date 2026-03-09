@@ -1,0 +1,151 @@
+    def run(self, user_prompt: str, is_internal: bool = False):
+        if not is_internal:
+            # Immediate feedback to the UI
+            self._emit("chat_message", {"role": "user", "content": user_prompt})
+            self.queue_count += 1
+            if self.queue_count > 1:
+                self._emit("system_msg", {"message": f"🕒 Agent is busy. Your request has been added to the queue ({self.queue_count-1} ahead)."})
+            self._emit("queue_update", {"count": self.queue_count})
+
+        self.lock.acquire()
+        self.is_busy = True
+        try:
+            if not is_internal:
+                self.queue_count = max(0, self.queue_count - 1)
+                self._emit("queue_update", {"count": self.queue_count})
+
+            if user_prompt.strip() in ["/new", "/reset"]:
+                logger.info(f"Resetting session {self.session_id}")
+                self.history = [self.history[0]]
+                self.current_mission = self.next_planned_step = None
+                self.consecutive_failures = 0
+                self.memory.save(self.session_id, self.history)
+                s = self.tool_map.get("manage_jobs"); 
+                if s: s.jobs = {}; s._save_jobs()
+                self._emit("jobs_update", {"jobs": {}})
+                self._emit("system_msg", {"message": "Session reset."})
+                return "System reset."
+
+            if not is_internal: 
+                logger.info(f"User message: {user_prompt[:50]}...")
+
+            if self.kb and not is_internal:
+                try:
+                    past_context = self.kb.run(action="search", text=user_prompt)
+                    if "Found relevant snippets" in past_context:
+                        if self.history and self.history[0]["role"] == "system":
+                            self.history[0]["content"] += f"\n\nPAST CONTEXT:\n{past_context}"
+                        else:
+                            self.history.insert(0, {"role": "system", "content": f"PAST CONTEXT:\n{past_context}"})
+                except Exception as e:
+                    logger.error(f"Knowledge base search failed: {e}")
+
+            self.history.append({"role": "user", "content": user_prompt})
+            self._emit("agent_start", {"agent": self.name, "task": user_prompt[:100] + "..."})
+            turn_history_start_idx = len(self.history) - 1
+
+            for turn in range(Config.MAX_TURNS):
+                self._emit("turn_update", {"agent": self.name, "turn": turn + 1})
+                self._prune_history()
+                
+                self._emit("agent_status", {"agent": self.name, "status": "thinking"})
+                try:
+                    response = self.llm.chat_completion(self.history, tools=self.tools)
+                except Exception as e:
+                    logger.error(f"LLM call failed: {e}")
+                    break
+                
+                content = response.get("content", "") or ""
+                tool_calls = response.get("tool_calls", [])
+
+                # 1. REFLECTION STEP (Before appending assistant message to history)
+                reflection = None
+                critical_tool = any(t["function"]["name"] in ["execute_shell", "file_manager"] for t in tool_calls)
+                if self.consecutive_failures > 0 or critical_tool:
+                    self._emit("agent_status", {"agent": self.name, "status": "reflecting"})
+                    reflection = self._reflect(response)
+                
+                if reflection:
+                    logger.info(f"Reflection triggered: {reflection}")
+                    self.history.append(response)
+                    if tool_calls:
+                        for call in tool_calls:
+                            self.history.append({
+                                "role": "tool",
+                                "tool_call_id": call.get("id", "0"),
+                                "name": call["function"]["name"],
+                                "content": f"CRITIC FEEDBACK: {reflection}. Strategy rejected. Try again."
+                            })
+                    else:
+                        self.history.append({"role": "user", "content": f"__INTERNAL_FEEDBACK__: {reflection}\nPlease correct your response."})
+                    continue 
+
+                # 2. STANDARD PATH
+                self.history.append(response)
+
+                if "MISSION:" in content: 
+                    self.current_mission = content.split("MISSION:")[1].split("\n")[0].strip()
+                if "NEXT_STEP:" in content: 
+                    self.next_planned_step = content.split("NEXT_STEP:")[1].split("\n")[0].strip()
+                if "MISSION_COMPLETE" in content: 
+                    logger.info("Mission Completed.")
+                    self.current_mission = self.next_planned_step = None
+                    browser_tool = self.tool_map.get("browser_controller")
+                    if browser_tool: threading.Thread(target=lambda: browser_tool.run(action="close")).start()
+
+                self._emit("mission_update", {"mission": self.current_mission, "next_step": self.next_planned_step})
+                
+                if not tool_calls:
+                    if content.strip() and not is_internal:
+                        self._emit("agent_reply", {"agent": self.name, "content": self._clean_content(content)})
+                    break
+
+                for call in tool_calls:
+                    tool_name = call["function"]["name"]
+                    try:
+                        tool_args = json.loads(call["function"]["arguments"])
+                    except Exception as e:
+                        logger.error(f"Failed to parse arguments for {tool_name}: {e}")
+                        obs = f"Error: Invalid JSON arguments."
+                        self.history.append({"role": "tool", "tool_call_id": call.get("id", "0"), "name": tool_name, "content": obs})
+                        continue
+
+                    self._emit("agent_status", {"agent": self.name, "status": "executing", "tool": tool_name, "args": tool_args})
+                    self._emit("tool_start", {"agent": self.name, "tool": tool_name, "args": tool_args})
+                    
+                    tool = self.tool_map.get(tool_name)
+                    try:
+                        if tool: tool.pre_run(snapshot_mgr=self.snapshot_mgr, **tool_args)
+                        run_args = tool_args.copy()
+                        run_args['snapshot_mgr'] = self.snapshot_mgr
+                        obs = tool.run(**run_args) if tool else f"Error: {tool_name} not found."
+                        if tool: tool.post_run(obs, snapshot_mgr=self.snapshot_mgr, **tool_args)
+                    except Exception as e:
+                        logger.error(f"Tool execution failed ({tool_name}): {e}")
+                        obs = f"Error: {str(e)}"
+                    
+                    if "Error" in str(obs) or "failed" in str(obs).lower():
+                        self.consecutive_failures += 1
+                        if self.consecutive_failures >= self.failure_threshold: self._trigger_debugger(str(obs))
+                    else:
+                        self.consecutive_failures = 0 
+                    
+                    if tool_name == "send_user_message": 
+                        cleaned_msg = self._clean_content(tool_args.get("message", ""))
+                        if cleaned_msg: self._emit("agent_reply", {"agent": self.name, "content": cleaned_msg})
+                    if tool_name == "manage_jobs": self._emit("jobs_update", {"jobs": tool.jobs})
+
+                    self._emit("tool_end", {"agent": self.name, "tool": tool_name, "result": obs})
+                    self.history.append({"role": "tool", "tool_call_id": call.get("id", "0"), "name": tool_name, "content": obs})
+            
+            if not is_internal: self._consolidate_memory(self.history[turn_history_start_idx:])
+            self._emit("agent_end", {"agent": self.name, "status": "success"})
+            self.memory.save(self.session_id, self.history)
+            return content
+        except Exception as e:
+            logger.exception("Agent run error")
+            return f"Agent Error: {str(e)}"
+        finally: 
+            self._emit("agent_status", {"agent": self.name, "status": "idle"})
+            self.is_busy = False
+            self.lock.release()
