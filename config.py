@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
-    # LLM Settings
-    BASE_URL = os.getenv("LLM_BASE_URL", "http://127.0.0.1:1234/v1")
+    # LLM Settings (Empty string defaults to the official OpenAI API)
+    BASE_URL = os.getenv("LLM_BASE_URL", "")
     API_KEY = os.getenv("LLM_API_KEY", "VLLM_API_KEY")
     DEFAULT_MODEL = os.getenv("LLM_MODEL", "qwen3.5-9b-mlx")
     VISION_MODEL = os.getenv("VISION_MODEL", "qwen2-vl-7b-instruct")

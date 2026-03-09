@@ -43,7 +43,11 @@ class FileTool(BaseTool):
         content = kwargs.get("content", "")
         
         # Ensure path is absolute or resolved from home
-        path = Path(file_path).expanduser().resolve()
+        p = Path(file_path).expanduser()
+        if not p.is_absolute():
+            path = (Path.home() / p).resolve()
+        else:
+            path = p.resolve()
         
         try:
             if action == "read":

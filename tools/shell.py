@@ -29,13 +29,16 @@ class ShellTool(BaseTool):
 
     def run(self, **kwargs) -> str:
         command = kwargs.get("command")
+        import os
+        home_dir = os.path.expanduser("~")
         try:
             result = subprocess.run(
                 command, 
                 shell=True, 
                 capture_output=True, 
                 text=True, 
-                timeout=30
+                timeout=30,
+                cwd=home_dir
             )
             return f"STDOUT: {result.stdout}\nSTDERR: {result.stderr}"
         except Exception as e:

@@ -1,39 +1,62 @@
-# Core LLM Interaction Logic
+# Core LLM Interaction Logic using OpenAI SDK
+import os
 import json
-import requests
+from openai import OpenAI
 from config import Config
 
 class LLMProvider:
     """
-    Minimalist interface to interact with local LLMs 
-    (LM Studio, vLLM, Ollama) via OpenAI-compatible endpoints.
+    Interface to interact with LLMs using the official OpenAI Python SDK.
+    Supports local endpoints (LM Studio, vLLM, Ollama) if base_url is set,
+    otherwise defaults to the official OpenAI API.
     """
     def __init__(self, base_url: str = Config.BASE_URL, api_key: str = Config.API_KEY, model: str = Config.DEFAULT_MODEL):
-        self.base_url = f"{base_url.rstrip('/')}/chat/completions"
-        self.headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         self.model = model
+        
+        # Determine client parameters based on user instruction: 
+        # "do not set base url and do not pass it on openai client if BASE_URL param is set to an empty string"
+        client_kwargs = {"api_key": api_key}
+        if base_url and base_url.strip():
+            client_kwargs["base_url"] = base_url.rstrip('/')
+            
+        self.client = OpenAI(**client_kwargs)
 
     def chat_completion(self, messages: list, tools: list = None, tool_choice: str = "auto", model_override: str = None):
-        """Perform a single chat completion turn."""
-        payload = {
-            "model": model_override or self.model,
-            "messages": messages,
-            "stream": False,
-        }
-        
-        if tools:
-            payload["tools"] = [tool.to_openai_schema() for tool in tools]
-            if tool_choice != "auto":
-                payload["tool_choice"] = tool_choice
-
+        """Perform a single chat completion turn using the OpenAI SDK."""
         try:
-            response = requests.post(self.base_url, headers=self.headers, json=payload, timeout=Config.TIMEOUT)
-            if response.status_code != 200:
-                print(f"LLM API Error {response.status_code}: {response.text}")
-            response.raise_for_status()
-            return response.json()["choices"][0]["message"]
+            params = {
+                "model": model_override or self.model,
+                "messages": messages,
+                "stream": False,
+            }
+            
+            if tools:
+                params["tools"] = [tool.to_openai_schema() for tool in tools]
+                if tool_choice != "auto":
+                    params["tool_choice"] = tool_choice
+
+            response = self.client.chat.completions.create(**params)
+            message = response.choices[0].message
+            
+            # Manually construct a dict that is compatible with the Agent's expected format
+            result = {
+                "role": "assistant",
+                "content": message.content or ""
+            }
+            
+            if message.tool_calls:
+                result["tool_calls"] = []
+                for tool_call in message.tool_calls:
+                    result["tool_calls"].append({
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments
+                        }
+                    })
+            
+            return result
         except Exception as e:
             error_msg = f"LLM Error: {str(e)}"
-            if 'response' in locals() and response is not None:
-                error_msg += f" - Status: {response.status_code} - Body: {response.text}"
             return {"role": "assistant", "content": error_msg}

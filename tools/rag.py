@@ -6,11 +6,26 @@ import uuid
 class KnowledgeBaseTool(BaseTool):
     """Local Knowledge Base Tool using ChromaDB for RAG."""
     
-    def __init__(self):
+    def __init__(self, emit_cb=None):
+        self.emit_cb = emit_cb
         self.db_dir = os.path.join(os.getcwd(), "chroma_db")
         os.makedirs(self.db_dir, exist_ok=True)
+        self._is_initialized = False
+
+    def _ensure_initialized(self):
+        """Lazy initialization of ChromaDB to allow notification if download is needed."""
+        if self._is_initialized:
+            return
+
+        # Check if the Chroma ONNX cache exists
+        cache_dir = os.path.expanduser("~/.cache/chroma/onnx_models/all-MiniLM-L6-v2")
+        if not os.path.exists(cache_dir):
+            if self.emit_cb:
+                self.emit_cb("system_msg", {"message": "📥 First-time RAG setup: Downloading embedding models (all-MiniLM-L6-v2). Please wait..."})
+
         self.client = chromadb.PersistentClient(path=self.db_dir)
         self.collection = self.client.get_or_create_collection(name="knowledge_base")
+        self._is_initialized = True
         
     @property
     def name(self) -> str:
@@ -44,6 +59,7 @@ class KnowledgeBaseTool(BaseTool):
 
     def run(self, action: str, text: str, metadata: str = "user_input", **kwargs) -> str:
         try:
+            self._ensure_initialized()
             if action == "store":
                 doc_id = str(uuid.uuid4())
                 self.collection.add(
