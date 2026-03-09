@@ -110,8 +110,10 @@ class BrowserControllerTool(BaseTool):
                 return f"Page: {title}\\n\\nInteractive Elements:\\n{elements}"
 
             elif action == "close":
-                await _GLOBAL_BROWSER_CONTEXT.close()
-                await _GLOBAL_PLAYWRIGHT.stop()
+                if _GLOBAL_BROWSER_CONTEXT:
+                    await _GLOBAL_BROWSER_CONTEXT.close()
+                if _GLOBAL_PLAYWRIGHT:
+                    await _GLOBAL_PLAYWRIGHT.stop()
                 _GLOBAL_BROWSER_CONTEXT = _GLOBAL_PLAYWRIGHT = _GLOBAL_PAGE = None
                 return "Browser closed."
 

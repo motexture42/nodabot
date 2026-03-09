@@ -277,6 +277,10 @@ DISCIPLINE RULES:
                 if "MISSION_COMPLETE" in content: 
                     logger.info("Mission Completed.")
                     self.current_mission = self.next_planned_step = None
+                    # AUTO-CLEANUP: If browser was used, close it
+                    browser_tool = self.tool_map.get("browser_controller")
+                    if browser_tool:
+                        threading.Thread(target=lambda: browser_tool.run(action="close")).start()
 
                 self._emit("mission_update", {"mission": self.current_mission, "next_step": self.next_planned_step})
                 self.history.append(response)
