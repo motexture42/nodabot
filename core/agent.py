@@ -70,8 +70,17 @@ DISCIPLINE RULES:
 
     def _clean_content(self, content: str) -> str:
         if not content: return ""
+        # 1. Remove reasoning tags
         cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
-        return cleaned.strip()
+        
+        # 2. Remove internal state labels (MISSION, NEXT_STEP, MISSION_COMPLETE)
+        lines = []
+        for line in cleaned.split('\n'):
+            if any(marker in line for marker in ["MISSION:", "NEXT_STEP:", "MISSION_COMPLETE"]):
+                continue
+            lines.append(line)
+        
+        return "\n".join(lines).strip()
 
     def _count_tokens(self, text: str) -> int:
         try:
