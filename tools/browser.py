@@ -95,16 +95,25 @@ class BrowserControllerTool(BaseTool):
         global _GLOBAL_PLAYWRIGHT, _GLOBAL_BROWSER_CONTEXT, _GLOBAL_PAGE
         action, selector = kwargs.get("action"), kwargs.get("selector")
         incognito, wait_seconds = kwargs.get("incognito", False), kwargs.get("wait_seconds", 2)
-        
+
         try:
+            # Handle CLOSE action without initializing
+            if action == "close":
+                if _GLOBAL_BROWSER_CONTEXT: await _GLOBAL_BROWSER_CONTEXT.close()
+                if _GLOBAL_PLAYWRIGHT: await _GLOBAL_PLAYWRIGHT.stop()
+                _GLOBAL_BROWSER_CONTEXT = _GLOBAL_PLAYWRIGHT = _GLOBAL_PAGE = None
+                return "Browser closed."
+
+            # For all other actions, initialize if needed
             await self._init_browser(incognito=incognito)
             page = _GLOBAL_PAGE
             result_msg = ""
-            
+
             if selector and ":contains(" in selector:
                 selector = selector.replace(":contains(", ":has-text(")
-            
+
             if action == "navigate":
+
                 url = kwargs.get("url")
                 if not url: return "Error: URL required."
                 if not url.startswith("http"): url = "https://" + url
