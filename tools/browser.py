@@ -113,12 +113,24 @@ class BrowserControllerTool(BaseTool):
                 selector = selector.replace(":contains(", ":has-text(")
 
             if action == "navigate":
-
                 url = kwargs.get("url")
                 if not url: return "Error: URL required."
                 if not url.startswith("http"): url = "https://" + url
-                await page.goto(url, wait_until="networkidle", timeout=60000)
-                result_msg = f"Navigated to {url}"
+                try:
+                    # Use 'load' instead of 'networkidle' because LinkedIn/social sites 
+                    # often have background trackers that never stop, causing networkidle to timeout.
+                    await page.goto(url, wait_until="load", timeout=30000)
+                except Exception as e:
+                    # Fallback: if it times out but we have a page title, we are actually there.
+                    title = await page.title()
+                    if title:
+                        result_msg = f"Navigation reached {url} but background assets are still loading. Current page: '{title}'."
+                    else:
+                        return f"Navigation Error: {str(e)}"
+
+                if not result_msg:
+                    result_msg = f"Navigated to {url}"
+
                 
             elif action == "click":
                 if not selector: return "Error: Selector required."
