@@ -234,6 +234,7 @@ DISCIPLINE RULES:
                     except: continue
 
                     self._emit("agent_status", {"agent": self.name, "status": "executing", "tool": tool_name, "args": tool_args})
+                    self._emit("tool_start", {"agent": self.name, "tool": tool_name, "args": tool_args})
                     tool = self.tool_map.get(tool_name)
                     try:
                         if tool: tool.pre_run(snapshot_mgr=self.snapshot_mgr, **tool_args)
@@ -249,6 +250,7 @@ DISCIPLINE RULES:
                     if tool_name == "send_user_message": 
                         self._emit("agent_reply", {"agent": self.name, "content": self._clean_content(tool_args.get("message", ""))})
 
+                    self._emit("tool_end", {"agent": self.name, "tool": tool_name, "result": obs})
                     self.history.append({"role": "tool", "tool_call_id": call.get("id"), "name": tool_name, "content": obs})
             
             self.memory.save(self.session_id, self.history)
