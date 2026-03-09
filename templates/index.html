@@ -356,6 +356,7 @@
             else if (tool === 'web_search') { icon = 'fa-magnifying-glass text-emerald-400'; detail = `Searching web for <i class="text-emerald-300">"${args.query}"</i>`; }
             else if (tool === 'fetch_url') { icon = 'fa-globe text-cyan-400'; detail = `Fetching <span class="text-cyan-300">${args.url}</span>`; }
             else if (tool === 'file_manager') { icon = 'fa-file-lines text-amber-400'; detail = `${args.action} ${args.path || ''}`; }
+            else if (tool === 'browser_controller') { icon = 'fa-compass text-blue-400'; detail = `${args.action} ${args.url || args.selector || ''}`; }
             else if (tool === 'generate_response') { icon = 'fa-brain text-yellow-400'; detail = `Formulating final response`; }
 
             const div = document.createElement('div');

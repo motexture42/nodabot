@@ -156,27 +156,26 @@ class BrowserControllerTool(BaseTool):
 
             elif action == "get_content":
                 title = await page.title()
-                all_elements = []
-                # Helper to scrape a frame
-                async def scrape_frame(f, prefix=""):
-                    try:
-                        items = await f.evaluate('''() => {
-                            return Array.from(document.querySelectorAll('button, a, input, [role="button"], [aria-label]')).map(el => ({
-                                tag: el.tagName.toLowerCase(),
-                                text: (el.innerText || el.placeholder || el.value || el.getAttribute('aria-label') || "").substring(0, 50).trim(),
-                                id: el.id
-                            })).filter(i => (i.text.length > 0 || i.id)).slice(0, 20);
-                        }''')
-                        for i in items:
-                            i['frame'] = prefix or "main"
-                            all_elements.append(i)
-                    except: pass
-
-                await scrape_frame(page)
-                for i, frame in enumerate(page.frames[1:]): # skip main
-                    await scrape_frame(frame, f"frame_{i}")
+                # 1. Extract feed posts (specific to LinkedIn/Social)
+                posts = await page.evaluate('''() => {
+                    const postElements = document.querySelectorAll('.feed-shared-update-v2__description, .update-components-text, [data-test-id="main-feed-post"], article');
+                    return Array.from(postElements).map(el => el.innerText.substring(0, 300)).filter(t => t.length > 20).slice(0, 5);
+                }''')
                 
-                return f"Page: {title}\\n\\nInteractive Elements (All Frames):\\n{all_elements[:50]}"
+                # 2. Extract general interactive elements
+                elements = await page.evaluate('''() => {
+                    return Array.from(document.querySelectorAll('button, a, input, [role="button"], [aria-label]')).map(el => ({
+                        tag: el.tagName.toLowerCase(),
+                        text: (el.innerText || el.placeholder || el.value || el.getAttribute('aria-label') || "").substring(0, 50).trim(),
+                        id: el.id
+                    })).filter(i => (i.text.length > 0 || i.id)).slice(0, 30);
+                }''')
+                
+                res = f"Page: {title}\\n\\n"
+                if posts:
+                    res += f"Visible Feed Posts:\\n" + "\\n".join([f"- {p}" for p in posts]) + "\\n\\n"
+                res += f"Interactive Elements Map:\\n{elements}"
+                return res
 
             elif action == "close":
                 if _GLOBAL_BROWSER_CONTEXT: await _GLOBAL_BROWSER_CONTEXT.close()
