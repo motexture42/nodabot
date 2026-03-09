@@ -235,12 +235,13 @@ DISCIPLINE RULES:
                 self._emit("turn_update", {"agent": self.name, "turn": turn + 1})
                 self._prune_history()
                 
-                self._emit("system_msg", {"message": f"🧠 {self.name} is thinking..."})
+                self._emit("agent_status", {"agent": self.name, "status": "thinking"})
                 try:
                     # Optimization: remove tool_choice if it's "auto" to avoid some local LLM errors
                     response = self.llm.chat_completion(self.history, tools=self.tools)
                 except Exception as e:
                     logger.error(f"LLM call failed: {e}")
+                    self._emit("agent_status", {"agent": self.name, "status": "idle"})
                     self._emit("agent_end", {"agent": self.name, "status": "error"})
                     break
                 
@@ -252,7 +253,7 @@ DISCIPLINE RULES:
                 
                 reflection = None
                 if self.consecutive_failures > 0 or critical_tool:
-                    self._emit("system_msg", {"message": f"🔎 {self.name} is double-checking the plan..."})
+                    self._emit("agent_status", {"agent": self.name, "status": "reflecting"})
                     reflection = self._reflect(response)
                 
                 # Prevent reflection loops on persistent errors
@@ -296,6 +297,7 @@ DISCIPLINE RULES:
                         self.history.append({"role": "tool", "tool_call_id": call.get("id", "0"), "name": tool_name, "content": obs})
                         continue
 
+                    self._emit("agent_status", {"agent": self.name, "status": "executing", "tool": tool_name})
                     self._emit("tool_start", {"agent": self.name, "tool": tool_name, "args": tool_args})
                     logger.info(f"Tool Call: {tool_name}({tool_args})")
                     
@@ -343,4 +345,5 @@ DISCIPLINE RULES:
             logger.exception("Agent run error")
             return f"Agent Error: {str(e)}"
         finally: 
+            self._emit("agent_status", {"agent": self.name, "status": "idle"})
             self.is_busy = False

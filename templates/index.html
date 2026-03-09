@@ -176,6 +176,39 @@
             if (indicator) indicator.remove();
         }
 
+        function showStatusBubble(status, toolName = '') {
+            removeStatusBubble();
+            const div = document.createElement('div');
+            div.id = 'status-bubble';
+            div.className = 'flex items-start gap-4 chat-bubble opacity-70';
+            
+            let icon = 'fa-brain animate-pulse text-blue-400';
+            let text = 'Thinking...';
+            
+            if (status === 'reflecting') {
+                icon = 'fa-magnifying-glass animate-bounce text-amber-400';
+                text = 'Self-Reflecting (Critic)...';
+            } else if (status === 'executing') {
+                icon = 'fa-gear fa-spin text-emerald-400';
+                text = `Executing ${toolName.replace('_', ' ')}...`;
+            }
+            
+            div.innerHTML = `
+                <div class="w-8 h-8 rounded bg-slate-700 flex items-center justify-center shrink-0 font-bold text-xs text-slate-400">NB</div>
+                <div class="bg-slate-800/50 p-3 rounded-lg rounded-tl-none border border-slate-700/50 flex items-center gap-3">
+                    <i class="fa-solid ${icon}"></i>
+                    <span class="text-xs italic text-slate-400 font-mono">${text}</span>
+                </div>
+            `;
+            chatBox.appendChild(div);
+            scrollToBottom(chatBox);
+        }
+
+        function removeStatusBubble() {
+            const bubble = document.getElementById('status-bubble');
+            if (bubble) bubble.remove();
+        }
+
         function submitMessage(event) {
             event.preventDefault();
             const msg = userInput.value.trim();
@@ -471,7 +504,18 @@
 
         socket.on('agent_reply', data => {
             hideTypingIndicator();
+            removeStatusBubble();
             appendChatMessage('assistant', data.content, data.agent || 'Main');
+        });
+
+        socket.on('agent_status', data => {
+            if (data.status === 'idle') {
+                removeStatusBubble();
+                hideTypingIndicator();
+            } else {
+                hideTypingIndicator();
+                showStatusBubble(data.status, data.tool || '');
+            }
         });
 
         socket.on('system_msg', data => {
@@ -495,6 +539,8 @@
 
         socket.on('tool_start', data => {
             const tid = 'tool-' + Date.now();
+            hideTypingIndicator();
+            removeStatusBubble();
             renderToolStart(data.agent, data.tool, data.args, tid);
             window._lastId = tid;
         });
