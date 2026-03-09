@@ -26,6 +26,41 @@ class BrowserControllerTool(BaseTool):
         if self.emit_cb:
             self.emit_cb(event_type, data)
 
+    @property
+    def name(self) -> str:
+        return "browser_controller"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Control a real web browser to navigate, click, type, and scrape data. "
+            "Supports persistent sessions (cookies/login) and incognito mode. "
+            "Use this for complex web tasks, logging into sites, or advanced research."
+        )
+
+    @property
+    def parameters(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["navigate", "click", "type", "scroll", "get_content", "screenshot", "close"],
+                    "description": "The action to perform in the browser."
+                },
+                "url": {"type": "string", "description": "The URL to navigate to (required for 'navigate')."},
+                "selector": {"type": "string", "description": "CSS selector for the element (required for 'click' and 'type')."},
+                "text": {"type": "string", "description": "Text to type (required for 'type')."},
+                "incognito": {
+                    "type": "boolean", 
+                    "description": "If true, starts a fresh session without saved cookies/history. Defaults to false (persistent).",
+                    "default": False
+                },
+                "wait_seconds": {"type": "integer", "description": "Seconds to wait after action. Defaults to 2.", "default": 2}
+            },
+            "required": ["action"]
+        }
+
     async def _init_browser(self, incognito=False):
         """Initializes the global browser context if not already running."""
         global _GLOBAL_PLAYWRIGHT, _GLOBAL_BROWSER_CONTEXT, _GLOBAL_PAGE
