@@ -167,39 +167,47 @@ class BrowserControllerTool(BaseTool):
                 result_msg = "Scrolled 500px."
 
             elif action == "get_content":
-                title = await page.title()
+                try:
+                    title = await asyncio.wait_for(page.title(), timeout=5.0)
+                except:
+                    title = "Unknown Page"
+                
                 all_elements = []
                 
                 # Helper to scrape a frame with a strict timeout
                 async def scrape_frame(f, prefix=""):
                     try:
-                        # Use a 5-second timeout for the JavaScript evaluation
+                        # Even shorter 3s timeout for frame scripts
                         items = await asyncio.wait_for(f.evaluate('''() => {
-                            return Array.from(document.querySelectorAll('button, a, input, [role="button"], [aria-label]')).map(el => ({
-                                tag: el.tagName.toLowerCase(),
-                                text: (el.innerText || el.placeholder || el.value || el.getAttribute('aria-label') || "").substring(0, 50).trim(),
-                                id: el.id
-                            })).filter(i => (i.text.length > 0 || i.id)).slice(0, 20);
-                        }'''), timeout=5.0)
+                            try {
+                                return Array.from(document.querySelectorAll('button, a, input, [role="button"], [aria-label]')).map(el => ({
+                                    tag: el.tagName.toLowerCase(),
+                                    text: (el.innerText || el.placeholder || el.value || el.getAttribute('aria-label') || "").substring(0, 50).trim(),
+                                    id: el.id
+                                })).filter(i => (i.text.length > 0 || i.id)).slice(0, 20);
+                            } catch (e) { return []; }
+                        }'''), timeout=3.0)
                         
                         for i in items:
                             i['frame'] = prefix or "main"
                             all_elements.append(i)
-                    except Exception as e:
-                        logger.debug(f"Failed to scrape frame {prefix}: {e}")
+                    except:
+                        pass
 
-                # Scrape main page and up to 10 sub-frames in parallel to save time
-                tasks = [scrape_frame(page)]
-                for i, frame in enumerate(page.frames[1:11]): # Limit to first 10 frames
-                    tasks.append(scrape_frame(frame, f"frame_{i}"))
-                
-                # Wait for all scraping tasks to finish or timeout the whole batch at 15s
+                # Scrape only the main page and immediate visible frames to avoid trackers
+                # Trackers often create infinite/dead frames that cause hangs
                 try:
-                    await asyncio.wait_for(asyncio.gather(*tasks), timeout=15.0)
-                except asyncio.TimeoutExpired:
-                    logger.warning("get_content reached global timeout, returning partial results.")
+                    await scrape_frame(page)
+                    # Only attempt up to 3 sub-frames, and only if they are cross-origin
+                    if len(page.frames) > 1:
+                        sub_tasks = []
+                        for i, frame in enumerate(page.frames[1:4]):
+                            sub_tasks.append(scrape_frame(frame, f"f_{i}"))
+                        await asyncio.wait_for(asyncio.gather(*sub_tasks), timeout=5.0)
+                except:
+                    pass
 
-                return f"Page: {title}\\n\\nInteractive Elements (All Frames):\\n{all_elements[:50]}"
+                return f"Page: {title}\\n\\nInteractive Elements (Main + Key Frames):\\n{all_elements[:50]}"
 
             elif action == "screenshot":
                 ts = int(time.time())
