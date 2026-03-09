@@ -210,6 +210,7 @@ DISCIPLINE RULES:
                 threading.Thread(target=lambda: self.run(f"COMMAND: Continue mission '{self.current_mission}'. Current: {self.next_planned_step}. Execute next action.", is_internal=True)).start()
 
     def run(self, user_prompt: str, is_internal: bool = False):
+        self.lock.acquire()
         self.is_busy = True
         try:
             if user_prompt.strip() in ["/new", "/reset"]:
@@ -350,3 +351,4 @@ DISCIPLINE RULES:
         finally: 
             self._emit("agent_status", {"agent": self.name, "status": "idle"})
             self.is_busy = False
+            self.lock.release()
