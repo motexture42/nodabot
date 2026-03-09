@@ -36,7 +36,15 @@ def serve_screenshot(filename):
 
 @socketio.on('connect')
 def handle_connect():
-    socketio.emit('session_history', {'history': main_agent.history})
+    # Clean history for the UI
+    cleaned_history = []
+    for msg in main_agent.history:
+        m = msg.copy()
+        if m.get("role") == "assistant" and m.get("content"):
+            m["content"] = main_agent._clean_content(m["content"])
+        cleaned_history.append(m)
+        
+    socketio.emit('session_history', {'history': cleaned_history})
     socketio.emit('mission_update', {
         "mission": main_agent.current_mission, 
         "next_step": main_agent.next_planned_step

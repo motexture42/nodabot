@@ -275,7 +275,22 @@
             // Hide internal feedback messages
             if (content.startsWith('__INTERNAL_FEEDBACK__')) return;
             
+            // Hide internal technical commands
+            if (content.startsWith('COMMAND:')) return;
+            
             if (agentName === 'Internal Critic') return;
+
+            // Frontend cleaning as a fallback
+            let cleanedContent = content;
+            if (role === 'assistant') {
+                cleanedContent = content.split('\n').filter(line => {
+                    return !line.includes("MISSION:") && 
+                           !line.includes("NEXT_STEP:") && 
+                           !line.includes("MISSION_COMPLETE");
+                }).join('\n').trim();
+            }
+
+            if (!cleanedContent && role === 'assistant') return;
 
             const div = document.createElement('div');
             div.className = `flex items-start gap-4 chat-bubble ${role === 'user' ? 'flex-row-reverse' : ''}`;
@@ -286,7 +301,7 @@
             div.innerHTML = `
                 <div class="w-8 h-8 rounded ${avatarColor} flex items-center justify-center shrink-0 font-bold">${avatarIcon}</div>
                 <div class="p-4 rounded-lg shadow-md border max-w-[85%] ${isUser ? 'bg-blue-900/20' : 'bg-slate-800'}">
-                    <div class="markdown-content text-slate-200 text-sm">${isUser ? escapeHTML(content) : marked.parse(content)}</div>
+                    <div class="markdown-content text-slate-200 text-sm">${isUser ? escapeHTML(cleanedContent) : marked.parse(cleanedContent)}</div>
                 </div>
             `;
             chatBox.appendChild(div);
