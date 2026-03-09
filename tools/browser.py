@@ -22,7 +22,7 @@ _GLOBAL_LOOP = None
 
 class BrowserControllerTool(BaseTool):
     """
-    Advanced Browser Controller with zombie process cleanup and verbose logging.
+    Advanced Browser Controller with zombie process cleanup and resilient session management.
     """
     def __init__(self, emit_cb=None):
         self.emit_cb = emit_cb
@@ -59,30 +59,34 @@ class BrowserControllerTool(BaseTool):
         }
 
     def _cleanup_zombie_processes(self):
-        """Forcefully kills any Chromium processes that might be locking the profile."""
+        """Surgically kills only orphaned Chromium processes related to this tool."""
         try:
-            logger.info("Checking for zombie browser processes...")
-            # On macOS/Linux, kill any chromium process related to our profile
-            # We search for the user_data_dir string in the process command line
-            cmd = f"ps aux | grep '{self.user_data_dir}' | grep -v grep | awk '{{print $2}}' | xargs kill -9"
-            subprocess.run(cmd, shell=True, capture_output=True)
-            time.sleep(1)
-        except Exception as e:
-            logger.debug(f"Process cleanup notice: {e}")
+            # We only do this if we are NOT currently tracking a context
+            if not _GLOBAL_BROWSER_CONTEXT:
+                logger.info("Cleaning up orphaned browser processes...")
+                cmd = f"ps aux | grep '{self.user_data_dir}' | grep -v grep | awk '{{print $2}}' | xargs kill -9"
+                subprocess.run(cmd, shell=True, capture_output=True)
+                time.sleep(0.5)
+        except: pass
 
     async def _init_browser(self, incognito=False):
         global _GLOBAL_PLAYWRIGHT, _GLOBAL_BROWSER_CONTEXT, _GLOBAL_PAGE, _GLOBAL_LOOP
         
-        # 1. Health Check
+        # 1. Resilient Health Check
         if _GLOBAL_BROWSER_CONTEXT and _GLOBAL_PAGE:
             try:
-                await asyncio.wait_for(_GLOBAL_PAGE.title(), timeout=2.0)
+                # Increased timeout to 10s for heavy sites like LinkedIn
+                await asyncio.wait_for(_GLOBAL_PAGE.title(), timeout=10.0)
                 return 
-            except:
-                logger.warning("Browser unresponsive. Attempting restart...")
-                _GLOBAL_BROWSER_CONTEXT = None
+            except Exception as e:
+                logger.warning(f"Browser health check failed ({e}). Restarting session...")
+                try:
+                    await _GLOBAL_BROWSER_CONTEXT.close()
+                    await _GLOBAL_PLAYWRIGHT.stop()
+                except: pass
+                _GLOBAL_BROWSER_CONTEXT = _GLOBAL_PLAYWRIGHT = _GLOBAL_PAGE = None
 
-        # 2. Cleanup before launch
+        # 2. Safety Cleanup
         self._cleanup_zombie_processes()
 
         # 3. Launch
@@ -90,11 +94,7 @@ class BrowserControllerTool(BaseTool):
             _GLOBAL_LOOP = asyncio.get_running_loop()
             _GLOBAL_PLAYWRIGHT = await async_playwright().start()
             
-            launch_args = [
-                "--disable-blink-features=AutomationControlled", 
-                "--no-sandbox", 
-                "--disable-infobars"
-            ]
+            launch_args = ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-infobars"]
             ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             
             if incognito:
@@ -112,10 +112,9 @@ class BrowserControllerTool(BaseTool):
                 _GLOBAL_PAGE = _GLOBAL_BROWSER_CONTEXT.pages[0]
                 
             await Stealth().apply_stealth_async(_GLOBAL_PAGE)
-            logger.info("Browser initialized successfully.")
+            logger.info("Browser session established.")
         except Exception as e:
-            logger.error(f"CRITICAL Browser Init Error: {e}")
-            logger.error(traceback.format_exc())
+            logger.error(f"Failed to start browser: {e}\n{traceback.format_exc()}")
             raise
 
     async def _run_async(self, **kwargs):
@@ -125,8 +124,9 @@ class BrowserControllerTool(BaseTool):
         
         try:
             if action == "close":
-                if _GLOBAL_BROWSER_CONTEXT: await _GLOBAL_BROWSER_CONTEXT.close()
-                if _GLOBAL_PLAYWRIGHT: await _GLOBAL_PLAYWRIGHT.stop()
+                if _GLOBAL_BROWSER_CONTEXT: 
+                    await _GLOBAL_BROWSER_CONTEXT.close()
+                    await _GLOBAL_PLAYWRIGHT.stop()
                 _GLOBAL_BROWSER_CONTEXT = _GLOBAL_PLAYWRIGHT = _GLOBAL_PAGE = None
                 return "Browser closed."
             
@@ -142,11 +142,10 @@ class BrowserControllerTool(BaseTool):
                 if not url: return "Error: URL required."
                 if not url.startswith("http"): url = "https://" + url
                 try: 
-                    await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=25000)
                     result_msg = f"Navigated to {url}"
-                except Exception as e:
-                    logger.warning(f"Nav timeout: {e}")
-                    result_msg = f"Navigated to {url} (partial)"
+                except:
+                    result_msg = f"Navigated to {url} (partial load)"
                 
             elif action == "refresh":
                 await page.reload(wait_until="domcontentloaded")
@@ -172,9 +171,8 @@ class BrowserControllerTool(BaseTool):
 
             elif action == "get_content":
                 try:
-                    title = await asyncio.wait_for(page.title(), timeout=3.0)
-                    snapshot = await asyncio.wait_for(page.accessibility.snapshot(), timeout=5.0)
-                    
+                    title = await asyncio.wait_for(page.title(), timeout=5.0)
+                    snapshot = await asyncio.wait_for(page.accessibility.snapshot(), timeout=8.0)
                     def simplify(node):
                         res = []
                         if node.get("role") in ["link", "button", "textbox", "checkbox"] or node.get("name"):
@@ -182,22 +180,19 @@ class BrowserControllerTool(BaseTool):
                         if "children" in node:
                             for child in node["children"]: res.extend(simplify(child))
                         return res
-                    
                     elements = simplify(snapshot) if snapshot else []
-                    return f"Page: {title} (URL: {page.url})\\n\\nInteractive Elements (Simplified):\\n{elements[:50]}"
+                    return f"Page: {title} (URL: {page.url})\\n\\nInteractive Elements:\\n{elements[:50]}"
                 except Exception as e:
-                    logger.error(f"get_content failed: {e}")
                     return f"Content Error: {str(e)}"
 
             elif action == "screenshot":
                 ts = int(time.time())
                 filepath = Path(Config.SCREENSHOT_DIR) / f"manual_{ts}.png"
                 try:
-                    await asyncio.wait_for(page.screenshot(path=str(filepath), timeout=10000), timeout=12.0)
+                    await asyncio.wait_for(page.screenshot(path=str(filepath), timeout=15000), timeout=18.0)
                     self._emit("artifact", {"type": "image", "content": f"/screenshots/manual_{ts}.png"})
                     return "Screenshot captured."
                 except Exception as e:
-                    logger.error(f"Screenshot failed: {e}")
                     return f"Error: Screenshot failed: {str(e)}"
 
             # Auto-feedback
@@ -213,8 +208,7 @@ class BrowserControllerTool(BaseTool):
 
             return result_msg
         except Exception as e:
-            logger.error(f"Browser action '{action}' failed: {e}")
-            logger.error(traceback.format_exc())
+            logger.error(f"Browser action '{action}' failed: {e}\n{traceback.format_exc()}")
             return f"Browser Error: {str(e)}"
 
     def run(self, **kwargs) -> str:
@@ -222,7 +216,7 @@ class BrowserControllerTool(BaseTool):
         if _GLOBAL_LOOP and _GLOBAL_LOOP.is_running():
             try:
                 future = asyncio.run_coroutine_threadsafe(self._run_async(**kwargs), _GLOBAL_LOOP)
-                return future.result(timeout=35)
+                return future.result(timeout=40)
             except Exception as e:
                 if kwargs.get("action") == "close": _GLOBAL_LOOP = None
                 return f"Browser Error: {str(e)}"

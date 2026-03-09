@@ -219,12 +219,7 @@ DISCIPLINE RULES:
                 if "MISSION:" in content: self.current_mission = content.split("MISSION:")[1].split("\n")[0].strip()
                 if "MISSION_COMPLETE" in content:
                     self.current_mission = None
-                    browser_tool = self.tool_map.get("browser_controller")
-                    if browser_tool:
-                        try:
-                            browser_tool.run(action="close")
-                        except Exception as e:
-                            logger.warning(f"Auto-cleanup browser close failed: {e}")
+                    logger.info("Mission Completed. Browser remains open for further interaction.")
 
                 if not tool_calls:
                     if content.strip() and not is_internal:
