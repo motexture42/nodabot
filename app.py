@@ -1,5 +1,6 @@
 import os
 import threading
+import queue
 from flask import Flask, render_template, send_from_directory
 from flask_socketio import SocketIO
 
@@ -25,6 +26,28 @@ main_agent = Agent(
 )
 
 watcher_manager = WatcherManager(main_agent, emit_cb=wrapped_emit)
+
+# --- DEDICATED WORKER THREAD ---
+# This ensures Playwright and other thread-sensitive tools stay alive across turns
+task_queue = queue.Queue()
+
+def agent_worker_loop():
+    while True:
+        msg = task_queue.get()
+        if msg is None: break # Poison pill to shutdown
+        try:
+            main_agent.run(msg)
+            # Sync watchers if the last action might have affected them
+            if any("manage_watchers" in str(m) for m in main_agent.history[-2:]):
+                watcher_manager.sync()
+        except Exception as e:
+            print(f"Worker Error: {e}")
+        finally:
+            task_queue.task_done()
+
+# Start the immortal worker thread
+worker_thread = threading.Thread(target=agent_worker_loop, daemon=True)
+worker_thread.start()
 
 @app.route('/')
 def index():
@@ -82,16 +105,14 @@ def handle_remove_watcher(data):
 def handle_message(data):
     msg = data.get('message', '')
     if msg == '/reset': 
-        main_agent.run(msg)
-        watcher_manager.sync()
+        # For resets, we can clear the queue to prevent old tasks from running
+        while not task_queue.empty():
+            try: task_queue.get_nowait()
+            except: pass
+        task_queue.put(msg)
     else:
-        def run_task():
-            main_agent.run(msg)
-            # Sync watchers if the last action might have affected them
-            # Check last 2 messages for tool calls to manage_watchers
-            if any("manage_watchers" in str(m) for m in main_agent.history[-2:]):
-                watcher_manager.sync()
-        threading.Thread(target=run_task).start()
+        # Enqueue the task for the worker thread
+        task_queue.put(msg)
 
 if __name__ == '__main__':
     print(f"Starting NodaBot UI on http://127.0.0.1:{Config.PORT}")
