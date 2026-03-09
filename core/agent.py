@@ -257,7 +257,10 @@ DISCIPLINE RULES:
                 content = response.get("content", "") or ""
                 tool_calls = response.get("tool_calls", [])
 
-                # REFLECTION STEP
+                # 1. APPEND ASSISTANT RESPONSE FIRST (Standard Protocol)
+                self.history.append(response)
+
+                # 2. REFLECTION STEP
                 reflection = None
                 critical_tool = any(t["function"]["name"] in ["execute_shell", "file_manager"] for t in tool_calls)
                 if self.consecutive_failures > 0 or critical_tool:
@@ -266,22 +269,19 @@ DISCIPLINE RULES:
                 
                 if reflection:
                     logger.info(f"Reflection triggered: {reflection}")
-                    # Handle tool calls by responding with the reflection feedback
                     if tool_calls:
-                        self.history.append(response)
+                        # Protocol: Must respond to tool calls
                         for call in tool_calls:
                             self.history.append({
                                 "role": "tool",
                                 "tool_call_id": call.get("id", "0"),
                                 "name": call["function"]["name"],
-                                "content": f"CRITIC FEEDBACK: {reflection}. Please try a different approach or fix the parameters."
+                                "content": f"CRITIC FEEDBACK: {reflection}. Strategy rejected. Try again."
                             })
-                        continue # Re-run with feedback in tool results
                     else:
-                        # Content only response - append feedback as user message
-                        self.history.append(response)
+                        # No tools, just append user feedback
                         self.history.append({"role": "user", "content": f"__INTERNAL_FEEDBACK__: {reflection}\nPlease correct your response."})
-                        continue
+                    continue # Start next turn with the feedback in history
 
                 # MISSION Tracking
                 if "MISSION:" in content: 
@@ -295,7 +295,6 @@ DISCIPLINE RULES:
                     if browser_tool: threading.Thread(target=lambda: browser_tool.run(action="close")).start()
 
                 self._emit("mission_update", {"mission": self.current_mission, "next_step": self.next_planned_step})
-                self.history.append(response)
                 
                 if not tool_calls:
                     if content.strip() and not is_internal:
