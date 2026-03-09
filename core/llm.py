@@ -19,7 +19,7 @@ class LLMProvider:
         if base_url and base_url.strip():
             client_kwargs["base_url"] = base_url.rstrip('/')
             
-        self.client = OpenAI(**client_kwargs)
+        self.client = OpenAI(**client_kwargs, max_retries=2)
 
     def chat_completion(self, messages: list, tools: list = None, tool_choice: str = "auto", model_override: str = None):
         """Perform a single chat completion turn using the OpenAI SDK."""

@@ -196,6 +196,13 @@ DISCIPLINE RULES:
                     break
                 
                 content = response.get("content", "") or ""
+                
+                # Check for error in response dictionary (from LLMProvider.chat_completion catch block)
+                if "LLM Error" in content:
+                    if not is_internal:
+                        self._emit("agent_reply", {"agent": self.name, "content": f"⚠️ {content}"})
+                    break
+
                 tool_calls = response.get("tool_calls", [])
 
                 # 3. REFLECTION
