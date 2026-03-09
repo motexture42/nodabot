@@ -31,6 +31,7 @@ class Agent:
         self.tool_map = {tool.name: tool for tool in self.tools}
         self.emit_cb = emit_cb
         self.name = name
+        self.lock = threading.Lock()
         
         # State & Heartbeat
         self.current_mission = None
@@ -50,19 +51,16 @@ class Agent:
         if loaded_history:
             self.history = loaded_history
             logger.info(f"Loaded session {self.session_id} with {len(self.history)} messages.")
-        self.history = [
-            {"role": "system", "content": """You are NodaBot (NB), a high-precision autonomous system. 
+        else:
+            self.history = [
+                {"role": "system", "content": """You are NodaBot (NB), a high-precision autonomous system. 
 
-        DISCIPLINE RULES:
-        1. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your final responses or in 'send_user_message'.
-        2. RESULTS ONLY: Deliver results directly. If a user asks for a file, create it and report success.
-        3. MESSAGING: Use 'send_user_message' to talk to the user during jobs/missions. 
-        4. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning (assistant messages), but these will be filtered from the user.
-        5. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach."""}
-        ]
-
-5. SWARM ORCHESTRATION: For complex, multi-step tasks (research, coding, testing), prefer using 'spawn_child_agent' to create specialized experts. This keeps the main context clean and increases success rates.
-6. SELF-CRITICISM: Your responses may be reviewed by an internal critic. If you receive [INTERNAL FEEDBACK], adjust your strategy immediately without debating."""}
+DISCIPLINE RULES:
+1. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your final responses or in 'send_user_message'.
+2. RESULTS ONLY: Deliver results directly. If a user asks for a file, create it and report success.
+3. MESSAGING: Use 'send_user_message' to talk to the user during jobs/missions. 
+4. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning (assistant messages), but these will be filtered from the user.
+5. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach."""}
             ]
             logger.info(f"Started new session {self.session_id}.")
 
@@ -76,7 +74,6 @@ class Agent:
         cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
         
         # 2. Aggressively remove internal state labels and meta-commentary patterns
-        # We use a lookahead to handle patterns at the end of strings or before newlines
         patterns = [
             r'(?i)MISSION:.*?(?=\n|$)', 
             r'(?i)NEXT_STEP:.*?(?=\n|$)', 
@@ -109,7 +106,6 @@ class Agent:
         total_tokens = sum(self._count_tokens(str(m.get("content", ""))) for m in self.history)
         if total_tokens > max_tokens and len(self.history) > 10:
             logger.info(f"Pruning history (tokens: {total_tokens} > {max_tokens})")
-            # Keep system prompt and last few messages
             for i in range(1, len(self.history) - 5):
                 if self.history[i].get("role") == "tool" and self.history[i].get("content") != "(Old tool output removed)":
                     self.history[i]["content"] = "(Old tool output removed)"
@@ -178,15 +174,12 @@ class Agent:
         )
         
         try:
-            # Call LLM for diagnosis
             res = self.llm.chat_completion([{"role": "user", "content": diagnosis_prompt}], tools=None)
             strategy = self._clean_content(res.get("content", "Try a different approach."))
-            
-            # Inject the new strategy into history
             self.history.append({"role": "system", "content": f"DEBUGGER RECOMMENDATION: {strategy}\nABANDON CURRENT PATH. START NEW STRATEGY NOW."})
             self._emit("system_msg", {"message": "✅ Debugger suggested new strategy. Pivoting..."})
             logger.info("Debugger provided new strategy.")
-            self.consecutive_failures = 0 # Reset counter after pivot
+            self.consecutive_failures = 0 
         except Exception as e:
             logger.error(f"Debugger failed: {e}")
         finally:
@@ -194,27 +187,27 @@ class Agent:
 
     def heartbeat(self):
         if self.is_busy: return
-        
-        scheduler = self.tool_map.get("manage_jobs")
-        if scheduler:
-            now = time.time()
-            for jid, job in list(scheduler.jobs.items()):
-                if now >= job["next_run"]:
-                    job["runs_completed"] = job.get("runs_completed", 0) + 1
-                    should_remove = (job.get("max_runs", 0) > 0 and job["runs_completed"] >= job["max_runs"])
-                    self._emit("system_msg", {"message": f"⚡ Running job: {job['task']}"})
-                    logger.info(f"Running scheduled job {jid}: {job['task']}")
-                    job["last_run"], job["next_run"] = now, now + job["interval"]
-                    if should_remove: scheduler.run(action="remove", job_id=jid)
-                    else: scheduler._save_jobs()
-                    self._emit("jobs_update", {"jobs": scheduler.jobs})
-                    threading.Thread(target=lambda: self.run(f"COMMAND: Execute scheduled task: '{job['task']}'. Use 'send_user_message'. No commentary.", is_internal=True)).start()
-                    return 
-        
-        if self.current_mission:
-            logger.debug(f"Heartbeat: Continuing mission '{self.current_mission}'")
-            self._emit("system_msg", {"message": "💓 Heartbeat: Mission sync..."})
-            threading.Thread(target=lambda: self.run(f"COMMAND: Continue mission '{self.current_mission}'. Current: {self.next_planned_step}. Execute next action.", is_internal=True)).start()
+        with self.lock:
+            scheduler = self.tool_map.get("manage_jobs")
+            if scheduler:
+                now = time.time()
+                for jid, job in list(scheduler.jobs.items()):
+                    if now >= job["next_run"]:
+                        job["runs_completed"] = job.get("runs_completed", 0) + 1
+                        should_remove = (job.get("max_runs", 0) > 0 and job["runs_completed"] >= job["max_runs"])
+                        self._emit("system_msg", {"message": f"⚡ Running job: {job['task']}"})
+                        logger.info(f"Running scheduled job {jid}: {job['task']}")
+                        job["last_run"], job["next_run"] = now, now + job["interval"]
+                        if should_remove: scheduler.run(action="remove", job_id=jid)
+                        else: scheduler._save_jobs()
+                        self._emit("jobs_update", {"jobs": scheduler.jobs})
+                        threading.Thread(target=lambda: self.run(f"COMMAND: Execute scheduled task: '{job['task']}'. Use 'send_user_message'. No commentary.", is_internal=True)).start()
+                        return 
+            
+            if self.current_mission:
+                logger.debug(f"Heartbeat: Continuing mission '{self.current_mission}'")
+                self._emit("system_msg", {"message": "💓 Heartbeat: Mission sync..."})
+                threading.Thread(target=lambda: self.run(f"COMMAND: Continue mission '{self.current_mission}'. Current: {self.next_planned_step}. Execute next action.", is_internal=True)).start()
 
     def run(self, user_prompt: str, is_internal: bool = False):
         self.is_busy = True
@@ -231,17 +224,14 @@ class Agent:
                 self._emit("system_msg", {"message": "Session reset."})
                 return "System reset."
 
-            # 1. Emit the original prompt to the UI immediately
             if not is_internal: 
                 self._emit("chat_message", {"role": "user", "content": user_prompt})
                 logger.info(f"User message: {user_prompt[:50]}...")
 
-            # 2. Handle Knowledge Base context - append to system prompt or start of history
             if self.kb and not is_internal:
                 try:
                     past_context = self.kb.run(action="search", text=user_prompt)
                     if "Found relevant snippets" in past_context:
-                        # Find the system message and append to it, or insert at index 1
                         if self.history and self.history[0]["role"] == "system":
                             self.history[0]["content"] += f"\n\nPAST CONTEXT:\n{past_context}"
                         else:
@@ -249,9 +239,7 @@ class Agent:
                 except Exception as e:
                     logger.error(f"Knowledge base search failed: {e}")
 
-            # 3. Add the user prompt to the history
             self.history.append({"role": "user", "content": user_prompt})
-
             self._emit("agent_start", {"agent": self.name, "task": user_prompt[:100] + "..."})
             turn_history_start_idx = len(self.history) - 1
 
@@ -261,66 +249,54 @@ class Agent:
                 
                 self._emit("agent_status", {"agent": self.name, "status": "thinking"})
                 try:
-                    # Optimization: remove tool_choice if it's "auto" to avoid some local LLM errors
                     response = self.llm.chat_completion(self.history, tools=self.tools)
                 except Exception as e:
                     logger.error(f"LLM call failed: {e}")
-                    self._emit("agent_status", {"agent": self.name, "status": "idle"})
-                    self._emit("agent_end", {"agent": self.name, "status": "error"})
                     break
                 
                 content = response.get("content", "") or ""
-
-                # REFLECTION STEP: Only trigger if we are "stuck" or doing something critical
                 tool_calls = response.get("tool_calls", [])
-                critical_tool = any(t["function"]["name"] in ["execute_shell", "file_manager"] for t in tool_calls)
-                
+
+                # REFLECTION STEP
                 reflection = None
+                critical_tool = any(t["function"]["name"] in ["execute_shell", "file_manager"] for t in tool_calls)
                 if self.consecutive_failures > 0 or critical_tool:
                     self._emit("agent_status", {"agent": self.name, "status": "reflecting"})
                     reflection = self._reflect(response)
                 
-                # Prevent reflection loops on persistent errors
-                if reflection and "LLM Error" in content:
-                    reflection = None
-
                 if reflection:
                     logger.info(f"Reflection triggered: {reflection}")
-                    # CRITICAL: We cannot append a USER message immediately after tool_calls 
-                    # if we haven't responded to the tool_calls yet.
-                    # We append the response, then dummy responses for the tool calls, then the feedback.
-                    self.history.append(response)
-                    
+                    # Handle tool calls by responding with the reflection feedback
                     if tool_calls:
+                        self.history.append(response)
                         for call in tool_calls:
                             self.history.append({
                                 "role": "tool",
                                 "tool_call_id": call.get("id", "0"),
                                 "name": call["function"]["name"],
-                                "content": f"Cancelled by Internal Critic: {reflection}"
+                                "content": f"CRITIC FEEDBACK: {reflection}. Please try a different approach or fix the parameters."
                             })
-                    
-                    self.history.append({"role": "user", "content": f"__INTERNAL_FEEDBACK__: {reflection}\nPlease adjust your strategy based on the feedback above and try again."})
-                    continue 
-                
+                        continue # Re-run with feedback in tool results
+                    else:
+                        # Content only response - append feedback as user message
+                        self.history.append(response)
+                        self.history.append({"role": "user", "content": f"__INTERNAL_FEEDBACK__: {reflection}\nPlease correct your response."})
+                        continue
+
+                # MISSION Tracking
                 if "MISSION:" in content: 
                     self.current_mission = content.split("MISSION:")[1].split("\n")[0].strip()
-                    logger.info(f"Current Mission: {self.current_mission}")
                 if "NEXT_STEP:" in content: 
                     self.next_planned_step = content.split("NEXT_STEP:")[1].split("\n")[0].strip()
-                    logger.debug(f"Next Step: {self.next_planned_step}")
                 if "MISSION_COMPLETE" in content: 
                     logger.info("Mission Completed.")
                     self.current_mission = self.next_planned_step = None
-                    # AUTO-CLEANUP: If browser was used, close it
                     browser_tool = self.tool_map.get("browser_controller")
-                    if browser_tool:
-                        threading.Thread(target=lambda: browser_tool.run(action="close")).start()
+                    if browser_tool: threading.Thread(target=lambda: browser_tool.run(action="close")).start()
 
                 self._emit("mission_update", {"mission": self.current_mission, "next_step": self.next_planned_step})
                 self.history.append(response)
                 
-                tool_calls = response.get("tool_calls", [])
                 if not tool_calls:
                     if content.strip() and not is_internal:
                         self._emit("agent_reply", {"agent": self.name, "content": self._clean_content(content)})
@@ -331,59 +307,40 @@ class Agent:
                     try:
                         tool_args = json.loads(call["function"]["arguments"])
                     except Exception as e:
-                        logger.error(f"Failed to parse tool arguments for {tool_name}: {e}")
-                        obs = f"Error: Invalid JSON arguments for tool {tool_name}."
+                        logger.error(f"Failed to parse arguments for {tool_name}: {e}")
+                        obs = f"Error: Invalid JSON arguments."
                         self.history.append({"role": "tool", "tool_call_id": call.get("id", "0"), "name": tool_name, "content": obs})
                         continue
 
-                    self._emit("agent_status", {
-                        "agent": self.name, 
-                        "status": "executing", 
-                        "tool": tool_name,
-                        "args": tool_args
-                    })
+                    self._emit("agent_status", {"agent": self.name, "status": "executing", "tool": tool_name, "args": tool_args})
                     self._emit("tool_start", {"agent": self.name, "tool": tool_name, "args": tool_args})
-                    logger.info(f"Tool Call: {tool_name}({tool_args})")
                     
                     tool = self.tool_map.get(tool_name)
                     try:
-                        # Call Pre-Run Hook
                         if tool: tool.pre_run(snapshot_mgr=self.snapshot_mgr, **tool_args)
-                        
-                        # Add snapshot_mgr to tool_args for the run call
                         run_args = tool_args.copy()
                         run_args['snapshot_mgr'] = self.snapshot_mgr
-                        
                         obs = tool.run(**run_args) if tool else f"Error: {tool_name} not found."
-                        
-                        # Call Post-Run Hook
                         if tool: tool.post_run(obs, snapshot_mgr=self.snapshot_mgr, **tool_args)
                     except Exception as e:
                         logger.error(f"Tool execution failed ({tool_name}): {e}")
-                        obs = f"Error executing {tool_name}: {str(e)}"
+                        obs = f"Error: {str(e)}"
                     
-                    # ERROR DETECTION
                     if "Error" in str(obs) or "failed" in str(obs).lower():
                         self.consecutive_failures += 1
-                        logger.warning(f"Tool failure detected: {tool_name}. Failures: {self.consecutive_failures}")
-                        if self.consecutive_failures >= self.failure_threshold:
-                            self._trigger_debugger(str(obs))
+                        if self.consecutive_failures >= self.failure_threshold: self._trigger_debugger(str(obs))
                     else:
-                        self.consecutive_failures = 0 # Reset on success
+                        self.consecutive_failures = 0 
                     
                     if tool_name == "send_user_message": 
                         cleaned_msg = self._clean_content(tool_args.get("message", ""))
-                        if cleaned_msg:
-                            self._emit("agent_reply", {"agent": self.name, "content": cleaned_msg})
-                    if tool_name == "manage_jobs": 
-                        self._emit("jobs_update", {"jobs": tool.jobs})
+                        if cleaned_msg: self._emit("agent_reply", {"agent": self.name, "content": cleaned_msg})
+                    if tool_name == "manage_jobs": self._emit("jobs_update", {"jobs": tool.jobs})
 
                     self._emit("tool_end", {"agent": self.name, "tool": tool_name, "result": obs})
                     self.history.append({"role": "tool", "tool_call_id": call.get("id", "0"), "name": tool_name, "content": obs})
             
-            if not is_internal:
-                self._consolidate_memory(self.history[turn_history_start_idx:])
-
+            if not is_internal: self._consolidate_memory(self.history[turn_history_start_idx:])
             self._emit("agent_end", {"agent": self.name, "status": "success"})
             self.memory.save(self.session_id, self.history)
             return content
