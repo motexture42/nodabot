@@ -169,22 +169,36 @@ class BrowserControllerTool(BaseTool):
             elif action == "get_content":
                 title = await page.title()
                 all_elements = []
+                
+                # Helper to scrape a frame with a strict timeout
                 async def scrape_frame(f, prefix=""):
                     try:
-                        items = await f.evaluate('''() => {
+                        # Use a 5-second timeout for the JavaScript evaluation
+                        items = await asyncio.wait_for(f.evaluate('''() => {
                             return Array.from(document.querySelectorAll('button, a, input, [role="button"], [aria-label]')).map(el => ({
                                 tag: el.tagName.toLowerCase(),
                                 text: (el.innerText || el.placeholder || el.value || el.getAttribute('aria-label') || "").substring(0, 50).trim(),
                                 id: el.id
                             })).filter(i => (i.text.length > 0 || i.id)).slice(0, 20);
-                        }''')
+                        }'''), timeout=5.0)
+                        
                         for i in items:
                             i['frame'] = prefix or "main"
                             all_elements.append(i)
-                    except: pass
-                await scrape_frame(page)
-                for i, frame in enumerate(page.frames[1:]):
-                    await scrape_frame(frame, f"frame_{i}")
+                    except Exception as e:
+                        logger.debug(f"Failed to scrape frame {prefix}: {e}")
+
+                # Scrape main page and up to 10 sub-frames in parallel to save time
+                tasks = [scrape_frame(page)]
+                for i, frame in enumerate(page.frames[1:11]): # Limit to first 10 frames
+                    tasks.append(scrape_frame(frame, f"frame_{i}"))
+                
+                # Wait for all scraping tasks to finish or timeout the whole batch at 15s
+                try:
+                    await asyncio.wait_for(asyncio.gather(*tasks), timeout=15.0)
+                except asyncio.TimeoutExpired:
+                    logger.warning("get_content reached global timeout, returning partial results.")
+
                 return f"Page: {title}\\n\\nInteractive Elements (All Frames):\\n{all_elements[:50]}"
 
             elif action == "screenshot":
