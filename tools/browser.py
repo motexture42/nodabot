@@ -84,7 +84,7 @@ class BrowserControllerTool(BaseTool):
             launch_args = ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-infobars"]
             ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             
-            _GLOBAL_BROWSER_CONTEXT = _GLOBAL_SYNC_PLAYWRIGHT.launch_persistent_context(
+            _GLOBAL_BROWSER_CONTEXT = _GLOBAL_SYNC_PLAYWRIGHT.chromium.launch_persistent_context(
                 user_data_dir=str(self.user_data_dir),
                 headless=False,
                 args=launch_args,
