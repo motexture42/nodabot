@@ -1,0 +1,32 @@
+    def run(self, **kwargs) -> str:
+        global _GLOBAL_LOOP
+        
+        # If we have a stored loop, we MUST try to use it for thread safety with Playwright
+        if _GLOBAL_LOOP and _GLOBAL_LOOP.is_running():
+            try:
+                # If we are in the SAME thread/loop, run normally
+                try:
+                    current_loop = asyncio.get_event_loop()
+                    if current_loop == _GLOBAL_LOOP:
+                        return current_loop.run_until_complete(self._run_async(**kwargs))
+                except RuntimeError:
+                    pass
+
+                # If we are in a DIFFERENT thread, post to the original loop
+                future = asyncio.run_coroutine_threadsafe(self._run_async(**kwargs), _GLOBAL_LOOP)
+                return future.result(timeout=40)
+            except Exception as e:
+                logger.warning(f"Failed to use original browser loop: {e}")
+                # Fallback to creating a new context if the old loop is dead
+                if kwargs.get("action") == "close":
+                    _GLOBAL_LOOP = None
+                    return "Browser already closed or unreachable."
+        
+        # Standard execution if no loop exists or original loop failed
+        try:
+            return asyncio.run(self._run_async(**kwargs))
+        except RuntimeError:
+            # Handle nested event loops (e.g. if called inside another async context)
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            return new_loop.run_until_complete(self._run_async(**kwargs))

@@ -220,7 +220,11 @@ DISCIPLINE RULES:
                 if "MISSION_COMPLETE" in content:
                     self.current_mission = None
                     browser_tool = self.tool_map.get("browser_controller")
-                    if browser_tool: threading.Thread(target=lambda: browser_tool.run(action="close")).start()
+                    if browser_tool:
+                        try:
+                            browser_tool.run(action="close")
+                        except Exception as e:
+                            logger.warning(f"Auto-cleanup browser close failed: {e}")
 
                 if not tool_calls:
                     if content.strip() and not is_internal:

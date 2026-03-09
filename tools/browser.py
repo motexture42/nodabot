@@ -2,16 +2,21 @@ import os
 import asyncio
 import base64
 import time
+import logging
 from pathlib import Path
 from playwright.async_api import async_playwright, Page, Frame
 from playwright_stealth import Stealth
 from .base import BaseTool
 from config import Config
 
+# Configure logging
+logger = logging.getLogger("BrowserTool")
+
 # Global instances to persist across tool re-initialization
 _GLOBAL_PLAYWRIGHT = None
 _GLOBAL_BROWSER_CONTEXT = None
 _GLOBAL_PAGE = None
+_GLOBAL_LOOP = None
 
 class BrowserControllerTool(BaseTool):
     """
@@ -58,11 +63,19 @@ class BrowserControllerTool(BaseTool):
         }
 
     async def _init_browser(self, incognito=False):
-        global _GLOBAL_PLAYWRIGHT, _GLOBAL_BROWSER_CONTEXT, _GLOBAL_PAGE
+        global _GLOBAL_PLAYWRIGHT, _GLOBAL_BROWSER_CONTEXT, _GLOBAL_PAGE, _GLOBAL_LOOP
         if _GLOBAL_BROWSER_CONTEXT: return
+        
+        _GLOBAL_LOOP = asyncio.get_running_loop()
+        logger.info("Initializing new browser instance...")
         _GLOBAL_PLAYWRIGHT = await async_playwright().start()
-        launch_args = ["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-infobars"]
+        launch_args = [
+            "--disable-blink-features=AutomationControlled", 
+            "--no-sandbox", 
+            "--disable-infobars"
+        ]
         ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        
         if incognito:
             browser = await _GLOBAL_PLAYWRIGHT.chromium.launch(headless=False, args=launch_args)
             _GLOBAL_BROWSER_CONTEXT = await browser.new_context(viewport={'width': 1280, 'height': 800}, user_agent=ua)
@@ -73,17 +86,17 @@ class BrowserControllerTool(BaseTool):
                 viewport={'width': 1280, 'height': 800}, user_agent=ua
             )
             _GLOBAL_PAGE = _GLOBAL_BROWSER_CONTEXT.pages[0]
+            
         await Stealth().apply_stealth_async(_GLOBAL_PAGE)
+        logger.info("Browser initialized successfully.")
 
     async def _find_target(self, page: Page, selector: str):
         """Finds the selector in the main page or any of its frames."""
-        # Try main page first
         try:
             if await page.query_selector(selector):
                 return page
         except: pass
         
-        # Scan all frames
         for frame in page.frames:
             try:
                 if await frame.query_selector(selector):
@@ -93,49 +106,47 @@ class BrowserControllerTool(BaseTool):
 
     async def _run_async(self, **kwargs):
         global _GLOBAL_PLAYWRIGHT, _GLOBAL_BROWSER_CONTEXT, _GLOBAL_PAGE
-        action, selector = kwargs.get("action"), kwargs.get("selector")
-        incognito, wait_seconds = kwargs.get("incognito", False), kwargs.get("wait_seconds", 2)
-
+        action = kwargs.get("action")
+        selector = kwargs.get("selector")
+        incognito = kwargs.get("incognito", False)
+        wait_seconds = kwargs.get("wait_seconds", 2)
+        
         try:
-            # Handle CLOSE action without initializing
+            # Handle CLOSE action immediately
             if action == "close":
-                if _GLOBAL_BROWSER_CONTEXT: await _GLOBAL_BROWSER_CONTEXT.close()
-                if _GLOBAL_PLAYWRIGHT: await _GLOBAL_PLAYWRIGHT.stop()
+                if _GLOBAL_BROWSER_CONTEXT:
+                    logger.info("Closing browser context...")
+                    await _GLOBAL_BROWSER_CONTEXT.close()
+                if _GLOBAL_PLAYWRIGHT:
+                    logger.info("Stopping playwright...")
+                    await _GLOBAL_PLAYWRIGHT.stop()
                 _GLOBAL_BROWSER_CONTEXT = _GLOBAL_PLAYWRIGHT = _GLOBAL_PAGE = None
-                return "Browser closed."
-
+                return "Browser closed successfully."
+            
             # For all other actions, initialize if needed
             await self._init_browser(incognito=incognito)
             page = _GLOBAL_PAGE
             result_msg = ""
-
+            
             if selector and ":contains(" in selector:
                 selector = selector.replace(":contains(", ":has-text(")
-
+            
             if action == "navigate":
                 url = kwargs.get("url")
                 if not url: return "Error: URL required."
                 if not url.startswith("http"): url = "https://" + url
                 try:
-                    # Use 'load' instead of 'networkidle' because LinkedIn/social sites 
-                    # often have background trackers that never stop, causing networkidle to timeout.
                     await page.goto(url, wait_until="load", timeout=30000)
                 except Exception as e:
-                    # Fallback: if it times out but we have a page title, we are actually there.
                     title = await page.title()
-                    if title:
-                        result_msg = f"Navigation reached {url} but background assets are still loading. Current page: '{title}'."
-                    else:
-                        return f"Navigation Error: {str(e)}"
-
-                if not result_msg:
-                    result_msg = f"Navigated to {url}"
-
+                    if title: result_msg = f"Navigated to {url} (background still loading)."
+                    else: return f"Navigation Error: {str(e)}"
+                if not result_msg: result_msg = f"Navigated to {url}"
                 
             elif action == "click":
                 if not selector: return "Error: Selector required."
                 target = await self._find_target(page, selector)
-                if not target: return f"Error: Element '{selector}' not found in any frame."
+                if not target: return f"Error: Element '{selector}' not found."
                 await target.wait_for_selector(selector, state="visible", timeout=5000)
                 await target.click(selector, timeout=5000, force=True)
                 result_msg = f"Clicked {selector}"
@@ -145,6 +156,7 @@ class BrowserControllerTool(BaseTool):
                 if not selector or not text: return "Error: Selector/Text required."
                 target = await self._find_target(page, selector)
                 if not target: return f"Error: Element '{selector}' not found."
+                await target.wait_for_selector(selector, state="visible", timeout=5000)
                 await target.fill(selector, text, timeout=5000)
                 if any(k in selector.lower() for k in ["search", "input", "user", "pass"]):
                     await target.press(selector, "Enter")
@@ -157,7 +169,6 @@ class BrowserControllerTool(BaseTool):
             elif action == "get_content":
                 title = await page.title()
                 all_elements = []
-                # Helper to scrape a frame
                 async def scrape_frame(f, prefix=""):
                     try:
                         items = await f.evaluate('''() => {
@@ -171,20 +182,19 @@ class BrowserControllerTool(BaseTool):
                             i['frame'] = prefix or "main"
                             all_elements.append(i)
                     except: pass
-
                 await scrape_frame(page)
-                for i, frame in enumerate(page.frames[1:]): # skip main
+                for i, frame in enumerate(page.frames[1:]):
                     await scrape_frame(frame, f"frame_{i}")
-                
                 return f"Page: {title}\\n\\nInteractive Elements (All Frames):\\n{all_elements[:50]}"
 
-            elif action == "close":
-                if _GLOBAL_BROWSER_CONTEXT: await _GLOBAL_BROWSER_CONTEXT.close()
-                if _GLOBAL_PLAYWRIGHT: await _GLOBAL_PLAYWRIGHT.stop()
-                _GLOBAL_BROWSER_CONTEXT = _GLOBAL_PLAYWRIGHT = _GLOBAL_PAGE = None
-                return "Browser closed."
+            elif action == "screenshot":
+                ts = int(time.time())
+                filename = f"manual_{ts}.png"
+                await page.screenshot(path=str(Path(Config.SCREENSHOT_DIR) / filename))
+                self._emit("artifact", {"type": "image", "content": f"/screenshots/{filename}"})
+                return f"Screenshot saved: {filename}"
 
-            # Auto-feedback
+            # Auto-feedback for interactive actions
             if action in ["navigate", "click", "type", "scroll"]:
                 await asyncio.sleep(wait_seconds)
                 ts = int(time.time())
@@ -195,11 +205,38 @@ class BrowserControllerTool(BaseTool):
 
             return result_msg
         except Exception as e:
+            logger.error(f"Browser action '{action}' failed: {e}")
             return f"Browser Error: {str(e)}"
 
     def run(self, **kwargs) -> str:
-        try: loop = asyncio.get_event_loop()
+        global _GLOBAL_LOOP
+        
+        # If we have a stored loop, we MUST try to use it for thread safety with Playwright
+        if _GLOBAL_LOOP and _GLOBAL_LOOP.is_running():
+            try:
+                # If we are in the SAME thread/loop, run normally
+                try:
+                    current_loop = asyncio.get_event_loop()
+                    if current_loop == _GLOBAL_LOOP:
+                        return current_loop.run_until_complete(self._run_async(**kwargs))
+                except RuntimeError:
+                    pass
+
+                # If we are in a DIFFERENT thread, post to the original loop
+                future = asyncio.run_coroutine_threadsafe(self._run_async(**kwargs), _GLOBAL_LOOP)
+                return future.result(timeout=40)
+            except Exception as e:
+                logger.warning(f"Failed to use original browser loop: {e}")
+                # Fallback to creating a new context if the old loop is dead
+                if kwargs.get("action") == "close":
+                    _GLOBAL_LOOP = None
+                    return "Browser already closed or unreachable."
+        
+        # Standard execution if no loop exists or original loop failed
+        try:
+            return asyncio.run(self._run_async(**kwargs))
         except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(self._run_async(**kwargs))
+            # Handle nested event loops (e.g. if called inside another async context)
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            return new_loop.run_until_complete(self._run_async(**kwargs))
