@@ -207,6 +207,7 @@ DISCIPLINE RULES:
                 try:
                     with open("chat_debug.log", "a", encoding="utf-8") as debug_file:
                         debug_file.write(f"--- TURN {turn + 1} ---\n")
+                        debug_file.write(f"HISTORY SENT TO LLM:\n{json.dumps(self.history, indent=2)}\n\n")
                         debug_file.write(f"RAW RESPONSE:\n{json.dumps(response, indent=2)}\n\n")
                 except Exception as e:
                     logger.error(f"Failed to write debug log: {e}")
@@ -224,7 +225,25 @@ DISCIPLINE RULES:
 
                 # 3. REFLECTION
                 reflection = None
-                if any(t["function"]["name"] in ["local_terminal", "file_manager"] for t in tool_calls):
+                requires_reflection = False
+                for t in tool_calls:
+                    name = t["function"]["name"]
+                    if name == "file_manager":
+                        try:
+                            args = json.loads(t["function"]["arguments"])
+                            if args.get("action") in ["write", "append"]:
+                                requires_reflection = True
+                        except: pass
+                    elif name == "local_terminal":
+                        try:
+                            args = json.loads(t["function"]["arguments"])
+                            cmd = args.get("command", "").lower()
+                            # Only reflect on potentially destructive commands
+                            if any(d in cmd for d in ["rm ", "mv ", "cp ", "sed ", "git ", "chmod ", "chown "]):
+                                requires_reflection = True
+                        except: pass
+
+                if requires_reflection:
                     self._emit("agent_status", {"agent": self.name, "status": "reflecting"})
                     reflection = self._reflect(response)
                 
