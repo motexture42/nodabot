@@ -256,6 +256,10 @@ DISCIPLINE RULES:
                     
                     if tool_name == "send_user_message": 
                         self._emit("agent_reply", {"agent": self.name, "content": self._clean_content(tool_args.get("message", ""))})
+                    elif tool_name == "manage_jobs":
+                        self._emit("jobs_update", {"jobs": tool.jobs})
+                    elif tool_name == "manage_watchers":
+                        self._emit("watchers_update", {"watchers": tool.active_watchers})
 
                     self._emit("tool_end", {"agent": self.name, "tool": tool_name, "result": obs})
                     self.history.append({"role": "tool", "tool_call_id": call.get("id"), "name": tool_name, "content": obs})
