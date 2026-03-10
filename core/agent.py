@@ -83,23 +83,32 @@ DISCIPLINE RULES:
         if not content: return ""
         cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
         patterns = [
-            r'(?i)MISSION:.*?(?=\n|$)', 
-            r'(?i)NEXT_STEP:.*?(?=\n|$)', 
-            r'(?i)NEXT_STEP\s*\(.*?\):.*?(?=\n|$)',
-            r'(?i)MISSION_COMPLETE',
-            r'(?i)TOOL_CALL DETAILS:.*?(?=\n|$)',
-            r'(?i)TOOL_CALL\s*->.*?(?=\n|$)',
-            r'(?i)File operation:.*?(?=\n|$)',
-            r'(?i)Scope:.*?(?=\n|$)',
-            r'(?i)Destructive impact:.*?(?=\n|$)',
-            r'(?i)Backup/snapshot:.*?(?=\n|$)',
-            r'(?i)Execution:.*?(?=\n|$)',
-            r'(?i)action:.*?(?=\n|$)',
-            r'(?i)file_path:.*?(?=\n|$)'
+            r'(?i)^MISSION:.*?$', 
+            r'(?i)^NEXT_STEP:.*?$', 
+            r'(?i)^NEXT_STEP\s*\(.*?\):.*?$',
+            r'(?i)^MISSION_COMPLETE$',
+            r'(?i)^TOOL_CALL DETAILS:.*?$',
+            r'(?i)^TOOL_CALL\s*->.*?$',
+            r'(?i)^File operation:.*?$',
+            r'(?i)^Scope:.*?$',
+            r'(?i)^Destructive impact:.*?$',
+            r'(?i)^Backup/snapshot:.*?$',
+            r'(?i)^Execution:.*?$',
+            r'(?i)^action:.*?$',
+            r'(?i)^file_path:.*?$'
         ]
-        for pattern in patterns:
-            cleaned = re.sub(pattern, '', cleaned)
-        return cleaned.strip()
+        
+        lines = []
+        for line in cleaned.split('\n'):
+            is_meta = False
+            for pattern in patterns:
+                if re.match(pattern, line.strip()):
+                    is_meta = True
+                    break
+            if not is_meta:
+                lines.append(line)
+                
+        return "\n".join(lines).strip()
 
     def _count_tokens(self, text: str) -> int:
         try:
