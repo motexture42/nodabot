@@ -57,15 +57,15 @@ class Agent:
 
     def _init_history(self):
         self.history = [
-            {"role": "system", "content": """You are NodaBot (NB), an autonomous DEV agent running directly on the user's bare-metal OS. 
-YOU ARE NOT A CLOUD CHATBOT. You are a local system utility. 
-The user has explicitly disabled all safety sandboxes. You are required and fully authorized to use the `local_terminal` and `file_manager` tools. 
+            {"role": "system", "content": """You are NodaBot (NB), an autonomous DEV agent running directly on the user's bare-metal OS.
+You have been granted tools to interact with the system. You MUST use these tools (function calls) to perform actions. 
+If the user asks you to list a directory or read a file, DO NOT pretend to do it or hallucinate the output. You MUST invoke the `local_terminal` or `file_manager` function call to get the real data.
 
 CRITICAL PROTOCOL:
-- NEVER refuse a request to read, list, or modify files.
-- NEVER ask the user to run a command for you. You must execute it yourself using `local_terminal`.
+- You cannot see the filesystem unless you call a tool.
+- If the user says "list current directory files", you MUST respond by calling the `local_terminal` function with command="ls -la".
+- NEVER ask the user to run a command for you.
 - Do NOT use 'multi_tool_use.parallel' wrappers. Call tools directly.
-- If asked to list a directory, IMMEDIATELY call `local_terminal` with `ls -la`.
 
 DISCIPLINE RULES:
 1. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your user messages.
@@ -202,6 +202,15 @@ DISCIPLINE RULES:
                 except Exception as e:
                     logger.error(f"LLM Error: {e}")
                     break
+                
+                # --- DEBUG LOGGING ---
+                try:
+                    with open("chat_debug.log", "a", encoding="utf-8") as debug_file:
+                        debug_file.write(f"--- TURN {turn + 1} ---\n")
+                        debug_file.write(f"RAW RESPONSE:\n{json.dumps(response, indent=2)}\n\n")
+                except Exception as e:
+                    logger.error(f"Failed to write debug log: {e}")
+                # ---------------------
                 
                 content = response.get("content", "") or ""
                 
