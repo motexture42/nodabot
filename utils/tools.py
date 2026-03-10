@@ -19,7 +19,7 @@ def get_tools(emit_cb=None):
     
     for _, module_name, _ in pkgutil.iter_modules(tools_pkg.__path__):
         # Skip base classes and specific tools handled separately
-        if module_name in ['base', 'spawn', 'scheduler', 'watcher']:
+        if module_name in ['base', 'spawn', 'scheduler', 'watcher', 'browser']:
             continue
             
         try:
