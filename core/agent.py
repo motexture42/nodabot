@@ -173,6 +173,7 @@ DISCIPLINE RULES:
                 self.current_mission = self.next_planned_step = None
                 self.consecutive_failures = 0
                 self.memory.save(self.session_id, self.history)
+                self._emit("system_msg", {"message": "Session reset."})
                 return "Reset."
 
             # Protocol Check: If last message was an assistant tool_call, we MUST fix history before adding USER message
