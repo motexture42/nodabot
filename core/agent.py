@@ -207,7 +207,7 @@ DISCIPLINE RULES:
 
                 # 3. REFLECTION
                 reflection = None
-                if self.consecutive_failures > 0 or any(t["function"]["name"] in ["execute_shell", "file_manager"] for t in tool_calls):
+                if any(t["function"]["name"] in ["execute_shell", "file_manager"] for t in tool_calls):
                     self._emit("agent_status", {"agent": self.name, "status": "reflecting"})
                     reflection = self._reflect(response)
                 
