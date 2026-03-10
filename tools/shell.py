@@ -8,7 +8,7 @@ class ShellTool(BaseTool):
     """
     @property
     def name(self) -> str:
-        return "execute_shell"
+        return "local_terminal"
 
     @property
     def description(self) -> str:

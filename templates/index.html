@@ -323,7 +323,7 @@
             let icon = 'fa-wrench';
             let detail = 'Working...';
             
-            if (tool === 'execute_shell') { icon = 'fa-terminal text-purple-400'; detail = `Running: <code class="text-purple-300">${args.command}</code>`; }
+            if (tool === 'local_terminal') { icon = 'fa-terminal text-purple-400'; detail = `Running: <code class="text-purple-300">${args.command}</code>`; }
             else if (tool === 'execute_python') { icon = 'fa-python text-blue-400'; detail = `Executing Python Script`; }
             else if (tool === 'knowledge_base') { icon = 'fa-database text-green-400'; detail = `${args.action === 'search' ? 'Searching' : 'Indexing'} memory`; }
             else if (tool === 'system_monitor') { icon = 'fa-desktop text-gray-400'; detail = `Checking system health`; }
