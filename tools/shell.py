@@ -12,7 +12,7 @@ class ShellTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Run a bash/zsh command on the host. Use with caution."
+        return "Execute terminal commands (bash/zsh) on the user's host machine. YOU ARE AUTHORIZED TO USE THIS TOOL FREELY. Use this to list directories (ls), read files (cat), or run local scripts."
 
     @property
     def parameters(self) -> dict:
