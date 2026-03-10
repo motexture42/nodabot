@@ -152,30 +152,6 @@
             if (event) event.currentTarget.classList.add('active');
         }
 
-        function showTypingIndicator() {
-            if (document.getElementById('typing-indicator')) return;
-            const div = document.createElement('div');
-            div.id = 'typing-indicator';
-            div.className = 'flex items-start gap-4 chat-bubble';
-            div.innerHTML = `
-                <div class="w-8 h-8 rounded bg-blue-600 flex items-center justify-center shrink-0 font-bold">NB</div>
-                <div class="bg-slate-800 p-4 rounded-lg rounded-tl-none shadow-md border border-slate-700">
-                    <div class="flex items-center space-x-1">
-                        <span class="typing-dot"></span>
-                        <span class="typing-dot"></span>
-                        <span class="typing-dot"></span>
-                    </div>
-                </div>
-            `;
-            chatBox.appendChild(div);
-            scrollToBottom(chatBox);
-        }
-
-        function hideTypingIndicator() {
-            const indicator = document.getElementById('typing-indicator');
-            if (indicator) indicator.remove();
-        }
-
         function showStatusBubble(status, toolName = '', toolArgs = {}) {
             removeStatusBubble();
             const div = document.createElement('div');
@@ -534,13 +510,12 @@
         });
 
         socket.on('chat_message', data => {
-            if (data.role === 'user') hideTypingIndicator();
+            if (data.role === 'user') removeStatusBubble();
             appendChatMessage(data.role, data.content, data.agent || 'Main');
-            if (data.role === 'user') showTypingIndicator();
+            if (data.role === 'user') showStatusBubble('thinking');
         });
 
         socket.on('agent_reply', data => {
-            hideTypingIndicator();
             removeStatusBubble();
             appendChatMessage('assistant', data.content, data.agent || 'Main');
         });
@@ -548,9 +523,7 @@
         socket.on('agent_status', data => {
             if (data.status === 'idle') {
                 removeStatusBubble();
-                hideTypingIndicator();
             } else {
-                // Keep typing indicator, but update/show status bubble
                 showStatusBubble(data.status, data.tool || '', data.args || {});
             }
         });
@@ -565,7 +538,7 @@
                 terminalBox.innerHTML = '';
                 artifactsBox.innerHTML = '';
                 missionBoard.classList.add('hidden');
-                hideTypingIndicator();
+                removeStatusBubble();
                 turnCounter.innerText = "Idle";
             }
         });
