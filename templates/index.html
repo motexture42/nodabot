@@ -352,10 +352,10 @@
             activityBox.appendChild(div);
             scrollToBottom(flowTab);
 
-            if (tool === 'execute_shell' || tool === 'execute_python') {
+            if (tool === 'local_terminal' || tool === 'execute_python') {
                 const line = document.createElement('div');
                 line.className = "text-slate-500 border-l-2 border-blue-500 pl-2 mb-1 mt-2";
-                line.innerHTML = `<span class="text-blue-400/50">[LOG]</span> $ ${tool === 'execute_shell' ? args.command : 'Executing python script...'}`;
+                line.innerHTML = `<span class="text-blue-400/50">[LOG]</span> $ ${tool === 'local_terminal' ? args.command : 'Executing python script...'}`;
                 terminalBox.appendChild(line);
                 scrollToBottom(document.getElementById('terminal-tab'));
             }
@@ -371,7 +371,7 @@
                 resultMini.innerText = "Output: " + String(result).substring(0, 150) + (String(result).length > 150 ? '...' : '');
             }
 
-            if (tool === 'execute_shell' || tool === 'execute_python') {
+            if (tool === 'local_terminal' || tool === 'execute_python') {
                 const line = document.createElement('div');
                 line.className = "mb-4 text-white whitespace-pre-wrap font-mono text-[12px] bg-slate-900/50 p-2 rounded border border-slate-800";
                 line.innerText = result;
