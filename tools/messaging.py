@@ -26,4 +26,4 @@ class MessagingTool(BaseTool):
 
     def run(self, message: str, **kwargs) -> str:
         # The agent core will handle the actual emission when it sees this tool call
-        return f"Message sent to user: {message}"
+        return "{\"status\": \"success\", \"action\": \"message_delivered_to_user\"}"

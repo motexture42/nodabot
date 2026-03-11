@@ -63,15 +63,14 @@ If the user asks you to list a directory or read a file, DO NOT pretend to do it
 
 CRITICAL PROTOCOL:
 - You cannot see the filesystem unless you call a tool.
-- If the user says "list current directory files", you MUST respond by calling the `local_terminal` function with command="ls -la".
 - NEVER ask the user to run a command for you.
-- Do NOT use 'multi_tool_use.parallel' wrappers. Call tools directly.
 
 DISCIPLINE RULES:
-1. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your user messages.
-2. MESSAGING: Use 'send_user_message' to talk to the user. 
-3. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning.
-4. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach."""}
+1. COMMUNICATION: To speak to the user, you MUST use the `send_user_message` tool. 
+2. SILENT THOUGHTS: When using tools (including `send_user_message`), keep your standard conversational text output COMPLETELY EMPTY. Do not narrate your actions. Do not repeat what the tool is doing.
+3. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your user messages.
+4. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning (but only if you are not using `send_user_message`).
+5. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach."""}
         ]
         logger.info(f"Started new session {self.session_id}.")
 
@@ -275,7 +274,7 @@ DISCIPLINE RULES:
                         for call in tool_calls:
                             self.history.append({"role": "tool", "tool_call_id": call.get("id"), "name": call["function"]["name"], "content": f"CRITIC: {reflection}"})
                     else:
-                        self.history.append({"role": "user", "content": f"__INTERNAL_FEEDBACK__: {reflection}"})
+                        self.history.append({"role": "system", "content": f"INTERNAL_FEEDBACK: {reflection}"})
                     continue 
 
                 # 4. COMMIT RESPONSE
