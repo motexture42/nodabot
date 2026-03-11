@@ -61,20 +61,18 @@ class TelegramInterface:
                     
             elif event_type == "tool_start":
                 tool = data.get("tool", "")
-                if tool != "send_user_message":
-                    args = data.get("args", {})
-                    args_str = json.dumps(args, indent=2)
-                    if len(args_str) > 1000:
-                        args_str = args_str[:1000] + "\n... [truncated]"
-                    self._send_long_message(f"🛠 Using tool: {tool}\nArgs: {args_str}")
+                args = data.get("args", {})
+                args_str = json.dumps(args, indent=2)
+                if len(args_str) > 1000:
+                    args_str = args_str[:1000] + "\n... [truncated]"
+                self._send_long_message(f"🛠 Using tool: {tool}\nArgs: {args_str}")
                 
             elif event_type == "tool_end":
                 tool = data.get("tool", "")
-                if tool != "send_user_message":
-                    result = str(data.get("result", ""))
-                    if len(result) > 1000:
-                        result = result[:1000] + "\n... [truncated]"
-                    self._send_long_message(f"✅ Tool Finished: {tool}\nResult:\n{result}")
+                result = str(data.get("result", ""))
+                if len(result) > 1000:
+                    result = result[:1000] + "\n... [truncated]"
+                self._send_long_message(f"✅ Tool Finished: {tool}\nResult:\n{result}")
                 
             elif event_type == "agent_status":
                 status = data.get("status", "")

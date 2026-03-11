@@ -66,11 +66,10 @@ CRITICAL PROTOCOL:
 - NEVER ask the user to run a command for you.
 
 DISCIPLINE RULES:
-1. COMMUNICATION: To speak to the user, you MUST use the `send_user_message` tool. 
-2. SILENT THOUGHTS: When using tools (including `send_user_message`), keep your standard conversational text output COMPLETELY EMPTY. Do not narrate your actions. Do not repeat what the tool is doing.
-3. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your user messages.
-4. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning (but only if you are not using `send_user_message`).
-5. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach."""}
+1. COMMUNICATION: Simply reply with normal text when you need to speak to the user. Do not use any special messaging tools.
+2. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your user messages. Only output what you want the user to read.
+3. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning/actions, strictly separated from conversational text.
+4. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach."""}
         ]
         logger.info(f"Started new session {self.session_id}.")
 
@@ -285,9 +284,11 @@ DISCIPLINE RULES:
                     self.current_mission = None
                     logger.info("Mission Completed. Browser remains open for further interaction.")
 
+                # Emit content immediately if there is something to say
+                if content.strip() and not is_internal:
+                    self._emit_reply(content)
+
                 if not tool_calls:
-                    if content.strip() and not is_internal:
-                        self._emit_reply(content)
                     break
 
                 # 5. EXECUTE TOOLS
@@ -310,9 +311,7 @@ DISCIPLINE RULES:
                     if "Error" in str(obs): self.consecutive_failures += 1
                     else: self.consecutive_failures = 0 
                     
-                    if tool_name == "send_user_message": 
-                        self._emit_reply(tool_args.get("message", ""))
-                    elif tool_name == "manage_jobs":
+                    if tool_name == "manage_jobs":
                         self._emit("jobs_update", {"jobs": tool.jobs})
                     elif tool_name == "manage_watchers":
                         self._emit("watchers_update", {"watchers": tool.active_watchers})

@@ -25,7 +25,7 @@ class WatcherHandler(FileSystemEventHandler):
                 print(f"[👀] Watcher {wid} triggered by {action_type}: {path}")
                 if self.emit_cb:
                     self.emit_cb('system_msg', {'message': f'👀 Watcher triggered: {os.path.basename(path)}'})
-                task_prompt = f"COMMAND: A file event '{action_type}' occurred at '{path}'. Your task: '{wdata['task']}'. Execute now and use 'send_user_message' to report."
+                task_prompt = f"COMMAND: A file event '{action_type}' occurred at '{path}'. Your task: '{wdata['task']}'. Execute now and report back to the user."
                 threading.Thread(target=lambda: self.agent.run(task_prompt, is_internal=True)).start()
                 break
 
