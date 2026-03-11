@@ -10,3 +10,4 @@ playwright
 watchdog
 chromadb
 playwright-stealth
+pyTelegramBotAPI>=4.15.2

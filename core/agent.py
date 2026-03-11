@@ -79,6 +79,18 @@ DISCIPLINE RULES:
         if self.emit_cb:
             self.emit_cb(event_type, data)
 
+    def _emit_reply(self, content: str):
+        cleaned = self._clean_content(content)
+        if not cleaned:
+            return
+            
+        # Deduplication: if we just said this, don't say it again.
+        if getattr(self, "last_emitted_reply", None) == cleaned:
+            return
+            
+        self.last_emitted_reply = cleaned
+        self._emit("agent_reply", {"agent": self.name, "content": cleaned})
+
     def _clean_content(self, content: str) -> str:
         if not content: return ""
         cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
@@ -170,6 +182,7 @@ DISCIPLINE RULES:
     def run(self, user_prompt: str, is_internal: bool = False):
         # 1. IMMEDIATE UI FEEDBACK (Outside Lock)
         if not is_internal:
+            self.last_emitted_reply = None
             self._emit("chat_message", {"role": "user", "content": user_prompt})
             self.queue_count += 1
             if self.queue_count > 1:
@@ -227,7 +240,7 @@ DISCIPLINE RULES:
                 # Check for error in response dictionary (from LLMProvider.chat_completion catch block)
                 if "LLM Error" in content:
                     if not is_internal:
-                        self._emit("agent_reply", {"agent": self.name, "content": f"⚠️ {content}"})
+                        self._emit_reply(f"⚠️ {content}")
                     break
 
                 tool_calls = response.get("tool_calls", [])
@@ -275,7 +288,7 @@ DISCIPLINE RULES:
 
                 if not tool_calls:
                     if content.strip() and not is_internal:
-                        self._emit("agent_reply", {"agent": self.name, "content": self._clean_content(content)})
+                        self._emit_reply(content)
                     break
 
                 # 5. EXECUTE TOOLS
@@ -299,7 +312,7 @@ DISCIPLINE RULES:
                     else: self.consecutive_failures = 0 
                     
                     if tool_name == "send_user_message": 
-                        self._emit("agent_reply", {"agent": self.name, "content": self._clean_content(tool_args.get("message", ""))})
+                        self._emit_reply(tool_args.get("message", ""))
                     elif tool_name == "manage_jobs":
                         self._emit("jobs_update", {"jobs": tool.jobs})
                     elif tool_name == "manage_watchers":

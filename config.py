@@ -6,6 +6,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
+    # Telegram Settings
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+    
     # LLM Settings (Empty string defaults to the official OpenAI API)
     BASE_URL = os.getenv("LLM_BASE_URL", "")
     API_KEY = os.getenv("LLM_API_KEY", "VLLM_API_KEY")

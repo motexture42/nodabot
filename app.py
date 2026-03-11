@@ -9,14 +9,34 @@ from config import Config
 from utils.tools import get_tools
 from utils.watcher_manager import WatcherManager
 from utils.app_helpers import emit_event, heartbeat_loop
+from interfaces.telegram_bot import TelegramInterface
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# --- DEDICATED WORKER THREAD ---
+# This ensures Playwright and other thread-sensitive tools stay alive across turns
+task_queue = queue.Queue()
+
+def enqueue_task(msg):
+    if msg == '/reset': 
+        # For resets, we can clear the queue to prevent old tasks from running
+        while not task_queue.empty():
+            try: task_queue.get_nowait()
+            except: pass
+        task_queue.put(msg)
+    else:
+        # Enqueue the task for the worker thread
+        task_queue.put(msg)
+
+telegram_bot = TelegramInterface(enqueue_callback=enqueue_task)
+telegram_bot.start()
+
 # Initialize global components
 def wrapped_emit(event_type, data):
     emit_event(socketio, event_type, data)
+    telegram_bot.emit(event_type, data)
 
 main_agent = Agent(
     tools=get_tools(emit_cb=wrapped_emit), 
@@ -26,10 +46,6 @@ main_agent = Agent(
 )
 
 watcher_manager = WatcherManager(main_agent, emit_cb=wrapped_emit)
-
-# --- DEDICATED WORKER THREAD ---
-# This ensures Playwright and other thread-sensitive tools stay alive across turns
-task_queue = queue.Queue()
 
 def agent_worker_loop():
     while True:
@@ -104,15 +120,8 @@ def handle_remove_watcher(data):
 @socketio.on('user_message')
 def handle_message(data):
     msg = data.get('message', '')
-    if msg == '/reset': 
-        # For resets, we can clear the queue to prevent old tasks from running
-        while not task_queue.empty():
-            try: task_queue.get_nowait()
-            except: pass
-        task_queue.put(msg)
-    else:
-        # Enqueue the task for the worker thread
-        task_queue.put(msg)
+    if msg:
+        enqueue_task(msg)
 
 if __name__ == '__main__':
     print(f"Starting NodaBot UI on http://127.0.0.1:{Config.PORT}")
