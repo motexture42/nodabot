@@ -31,8 +31,17 @@ class TelegramInterface:
     def start(self):
         if self.bot:
             print("Starting Telegram bot...")
-            threading.Thread(target=self.bot.infinity_polling, daemon=True).start()
+            # We catch exceptions to prevent the bot from crashing on network timeouts
+            threading.Thread(target=self.bot.infinity_polling, kwargs={"timeout": 10, "long_polling_timeout": 5, "logger_level": 30}, daemon=True).start()
             
+    def _send_long_message(self, text):
+        max_len = 4000
+        for i in range(0, len(text), max_len):
+            try:
+                self.bot.send_message(self.chat_id, text[i:i+max_len])
+            except Exception as e:
+                print(f"Failed to send chunk: {e}")
+
     def emit(self, event_type, data):
         if not self.bot or not self.chat_id:
             return
@@ -42,28 +51,30 @@ class TelegramInterface:
                 content = data.get("content", "")
                 if content:
                     if content != self.last_reply:
-                        self.bot.send_message(self.chat_id, f"🤖 Agent:\n{content}")
+                        self._send_long_message(f"🤖 Agent:\n{content}")
                         self.last_reply = content
                     
             elif event_type == "system_msg":
                 message = data.get("message", "")
                 if message:
-                    self.bot.send_message(self.chat_id, f"⚙️ System: {message}")
+                    self._send_long_message(f"⚙️ System: {message}")
                     
             elif event_type == "tool_start":
                 tool = data.get("tool", "")
                 if tool != "send_user_message":
                     args = data.get("args", {})
-                    self.bot.send_message(self.chat_id, f"🛠 Using tool: {tool}\nArgs: {json.dumps(args, indent=2)}")
+                    args_str = json.dumps(args, indent=2)
+                    if len(args_str) > 1000:
+                        args_str = args_str[:1000] + "\n... [truncated]"
+                    self._send_long_message(f"🛠 Using tool: {tool}\nArgs: {args_str}")
                 
             elif event_type == "tool_end":
                 tool = data.get("tool", "")
                 if tool != "send_user_message":
                     result = str(data.get("result", ""))
-                    # Truncate large results
                     if len(result) > 1000:
                         result = result[:1000] + "\n... [truncated]"
-                    self.bot.send_message(self.chat_id, f"✅ Tool Finished: {tool}\nResult:\n{result}")
+                    self._send_long_message(f"✅ Tool Finished: {tool}\nResult:\n{result}")
                 
             elif event_type == "agent_status":
                 status = data.get("status", "")
