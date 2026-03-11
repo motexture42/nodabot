@@ -43,6 +43,11 @@ class Agent:
         self.consecutive_failures = 0
         self.failure_threshold = 3
         self.is_debugging = False
+
+        # Metrics
+        self.session_tokens = 0
+        self.total_actions = 0
+        self.total_errors = 0
         
         # Knowledge Base Link
         self.kb = self.tool_map.get("knowledge_base")
@@ -219,6 +224,7 @@ DISCIPLINE RULES:
                 
                 try:
                     response = self.llm.chat_completion(self.history, tools=self.tools)
+                    self.session_tokens += self._count_tokens(str(self.history)) + self._count_tokens(str(response))
                 except Exception as e:
                     logger.error(f"LLM Error: {e}")
                     break
@@ -279,10 +285,17 @@ DISCIPLINE RULES:
                 # 4. COMMIT RESPONSE
                 self.history.append(response)
 
-                if "MISSION:" in content: self.current_mission = content.split("MISSION:")[1].split("\n")[0].strip()
+                if "MISSION:" in content: 
+                    self.current_mission = content.split("MISSION:")[1].split("\n")[0].strip()
+                if "NEXT_STEP:" in content:
+                    self.next_planned_step = content.split("NEXT_STEP:")[1].split("\n")[0].strip()
                 if "MISSION_COMPLETE" in content:
                     self.current_mission = None
+                    self.next_planned_step = None
                     logger.info("Mission Completed. Browser remains open for further interaction.")
+
+                if any(x in content for x in ["MISSION:", "NEXT_STEP:", "MISSION_COMPLETE"]):
+                    self._emit("mission_update", {"mission": self.current_mission, "next_step": self.next_planned_step})
 
                 # Emit content immediately if there is something to say
                 if content.strip() and not is_internal:
@@ -308,8 +321,13 @@ DISCIPLINE RULES:
                         if tool: tool.post_run(obs, snapshot_mgr=self.snapshot_mgr, **tool_args)
                     except Exception as e: obs = f"Error: {e}"
                     
-                    if "Error" in str(obs): self.consecutive_failures += 1
-                    else: self.consecutive_failures = 0 
+                    self.total_actions += 1
+
+                    if "Error" in str(obs): 
+                        self.consecutive_failures += 1
+                        self.total_errors += 1
+                    else: 
+                        self.consecutive_failures = 0 
                     
                     if tool_name == "manage_jobs":
                         self._emit("jobs_update", {"jobs": tool.jobs})
@@ -319,6 +337,12 @@ DISCIPLINE RULES:
                     self._emit("tool_end", {"agent": self.name, "tool": tool_name, "result": obs})
                     self.history.append({"role": "tool", "tool_call_id": call.get("id"), "name": tool_name, "content": obs})
             
+                self._emit("metrics_update", {
+                    "tokens": self.session_tokens,
+                    "actions": self.total_actions,
+                    "errors": self.total_errors
+                })
+
             self.memory.save(self.session_id, self.history)
             return content
         finally: 

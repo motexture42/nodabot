@@ -56,12 +56,19 @@
         </div>
         
         <!-- Mission Board -->
-        <div id="mission-board" class="hidden flex-1 mx-10 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 flex items-center gap-4 animate-fadeIn">
-            <div class="shrink-0 text-[10px] uppercase font-bold text-blue-400 tracking-tighter">Active Mission</div>
-            <div id="mission-text" class="text-sm font-medium text-slate-200 truncate flex-1 italic">None</div>
-            <div class="h-4 w-[1px] bg-slate-700"></div>
-            <div class="shrink-0 text-[10px] uppercase font-bold text-emerald-400 tracking-tighter">Next Action</div>
-            <div id="next-step-text" class="text-xs text-slate-400 truncate flex-1">Awaiting input...</div>
+        <div class="flex-1 flex flex-col mx-8">
+            <div class="flex items-center justify-center gap-6 text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1.5 transition-all">
+                <div class="flex items-center gap-1.5" title="Total Tokens Used"><i class="fa-solid fa-coins text-yellow-500"></i> <span id="metric-tokens">0</span> TOKENS</div>
+                <div class="flex items-center gap-1.5" title="Tool Actions Made"><i class="fa-solid fa-wrench text-blue-400"></i> <span id="metric-actions">0</span> ACTIONS</div>
+                <div class="flex items-center gap-1.5" title="Errors Encountered"><i class="fa-solid fa-triangle-exclamation text-red-500"></i> <span id="metric-errors">0</span> ERRORS</div>
+            </div>
+            <div id="mission-board" class="hidden bg-slate-800/80 border border-slate-700/80 rounded-md px-4 py-1.5 flex items-center justify-center gap-4 shadow-inner">
+                <div class="shrink-0 text-[10px] uppercase font-bold text-blue-400 tracking-tighter flex items-center gap-1.5"><i class="fa-solid fa-bullseye"></i> Mission</div>
+                <div id="mission-text" class="text-xs font-medium text-slate-200 truncate max-w-xs italic">None</div>
+                <div class="h-3 w-[1px] bg-slate-600"></div>
+                <div class="shrink-0 text-[10px] uppercase font-bold text-emerald-400 tracking-tighter flex items-center gap-1.5"><i class="fa-solid fa-shoe-prints"></i> Task</div>
+                <div id="next-step-text" class="text-[11px] text-slate-300 truncate max-w-sm">Awaiting input...</div>
+            </div>
         </div>
 
         <div class="flex items-center gap-4 text-sm text-slate-400">
@@ -191,10 +198,10 @@
             }
             
             div.innerHTML = `
-                <div class="w-8 h-8 rounded bg-slate-700 flex items-center justify-center shrink-0 font-bold text-xs text-slate-400">NB</div>
-                <div class="bg-slate-800/50 p-3 rounded-lg rounded-tl-none border border-slate-700/50 flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full shadow-md bg-slate-700 flex items-center justify-center shrink-0 font-bold text-[10px] text-slate-400 mt-1 border border-white/5">NB</div>
+                <div class="bg-slate-800/80 p-3 rounded-2xl rounded-tl-sm border border-slate-700 shadow-sm flex items-center gap-3">
                     <i class="fa-solid ${icon}"></i>
-                    <span class="text-xs italic text-slate-400 font-mono">${text}</span>
+                    <span class="text-xs italic text-slate-300 font-mono">${text}</span>
                 </div>
             `;
             chatBox.appendChild(div);
@@ -275,9 +282,9 @@
             const avatarIcon = isUser ? 'U' : 'NB';
             
             div.innerHTML = `
-                <div class="w-8 h-8 rounded ${avatarColor} flex items-center justify-center shrink-0 font-bold">${avatarIcon}</div>
-                <div class="p-4 rounded-lg shadow-md border max-w-[85%] ${isUser ? 'bg-blue-900/20' : 'bg-slate-800'}">
-                    <div class="markdown-content text-slate-200 text-sm">${isUser ? escapeHTML(cleanedContent) : marked.parse(cleanedContent)}</div>
+                <div class="w-8 h-8 rounded-full shadow-md ${avatarColor} flex items-center justify-center shrink-0 font-bold text-white text-xs mt-1 border border-white/10">${avatarIcon}</div>
+                <div class="p-4 rounded-2xl shadow-sm ${isUser ? 'rounded-tr-sm bg-blue-600 text-white' : 'rounded-tl-sm bg-slate-800 border border-slate-700'} max-w-[85%]">
+                    <div class="markdown-content text-sm leading-relaxed ${isUser ? 'text-white' : 'text-slate-200'}">${isUser ? escapeHTML(cleanedContent) : marked.parse(cleanedContent)}</div>
                 </div>
             `;
             chatBox.appendChild(div);
@@ -425,6 +432,16 @@
             }
         });
 
+        socket.on('metrics_update', data => {
+            document.getElementById('metric-tokens').innerText = data.tokens.toLocaleString();
+            document.getElementById('metric-actions').innerText = data.actions.toLocaleString();
+            document.getElementById('metric-errors').innerText = data.errors.toLocaleString();
+            
+            if (data.errors > 0) {
+                document.getElementById('metric-errors').classList.add('text-red-400');
+            }
+        });
+
         socket.on('jobs_update', data => {
             jobsBox.innerHTML = '';
             const jobs = data.jobs || {};
@@ -540,6 +557,11 @@
                 missionBoard.classList.add('hidden');
                 removeStatusBubble();
                 turnCounter.innerText = "Idle";
+                
+                document.getElementById('metric-tokens').innerText = '0';
+                document.getElementById('metric-actions').innerText = '0';
+                document.getElementById('metric-errors').innerText = '0';
+                document.getElementById('metric-errors').classList.remove('text-red-400');
             }
         });
 

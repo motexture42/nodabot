@@ -88,6 +88,11 @@ def handle_connect():
         "mission": main_agent.current_mission, 
         "next_step": main_agent.next_planned_step
     })
+    socketio.emit('metrics_update', {
+        "tokens": main_agent.session_tokens,
+        "actions": main_agent.total_actions,
+        "errors": main_agent.total_errors
+    })
     
     scheduler = main_agent.tool_map.get("manage_jobs")
     if scheduler:
