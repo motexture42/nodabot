@@ -74,7 +74,8 @@ DISCIPLINE RULES:
 1. COMMUNICATION: Simply reply with normal text when you need to speak to the user. Do not use any special messaging tools.
 2. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your user messages. Only output what you want the user to read.
 3. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning/actions, strictly separated from conversational text.
-4. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach."""}
+4. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach.
+5. SWARM DELEGATION: If a task requires more than 2 steps of research, coding, or complex logic, you MUST delegate it using `spawn_child_agent` instead of doing it yourself. Use 'parallel' mode for multiple independent tasks."""}
         ]
         logger.info(f"Started new session {self.session_id}.")
 
