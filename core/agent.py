@@ -187,7 +187,6 @@ DISCIPLINE RULES:
         # 1. IMMEDIATE UI FEEDBACK (Outside Lock)
         if not is_internal:
             self.last_emitted_reply = None
-            self._emit("chat_message", {"role": "user", "content": user_prompt})
             self.queue_count += 1
             if self.queue_count > 1:
                 self._emit("system_msg", {"message": f"🕒 Queued ({self.queue_count-1} ahead)"})

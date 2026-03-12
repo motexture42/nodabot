@@ -248,6 +248,11 @@
             event.preventDefault();
             const msg = userInput.value.trim();
             if (msg) {
+                // Immediately show the user's message in the UI so they know it was sent
+                if (msg.toLowerCase() !== '/reset') {
+                    appendChatMessage('user', msg);
+                }
+                
                 socket.emit('user_message', { message: msg });
                 userInput.value = '';
                 showTypingIndicator();
