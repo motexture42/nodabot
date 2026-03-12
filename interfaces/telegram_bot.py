@@ -28,20 +28,6 @@ class TelegramInterface:
                 self.last_reply = None  # Reset deduplication for new user message
                 self.enqueue_callback(message.text)
                 
-        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('approve_') or call.data.startswith('deny_'))
-        def handle_approval_callback(call):
-            if not self.enqueue_callback: return
-            
-            action, req_id = call.data.split('_', 1)
-            approved = (action == 'approve')
-            
-            # Resolve via the central manager (we need to import it)
-            from utils.approvals import approval_manager
-            approval_manager.resolve(req_id, approved)
-            
-            self.bot.answer_callback_query(call.id, f"Command {'approved' if approved else 'denied'}")
-            self.bot.edit_message_text(f"Command {'✅ Approved' if approved else '❌ Denied'}", chat_id=call.message.chat.id, message_id=call.message.message_id)
-
     def start(self):
         if self.bot:
             print("Starting Telegram bot...")
@@ -88,16 +74,6 @@ class TelegramInterface:
                 if len(result) > 1000:
                     result = result[:1000] + "\n... [truncated]"
                 self._send_long_message(f"✅ Tool Finished: {tool}\nResult:\n{result}")
-                
-            elif event_type == "approval_request":
-                req_id = data.get("id")
-                command = data.get("command")
-                markup = telebot.types.InlineKeyboardMarkup()
-                markup.add(
-                    telebot.types.InlineKeyboardButton("✅ Approve", callback_data=f"approve_{req_id}"),
-                    telebot.types.InlineKeyboardButton("❌ Deny", callback_data=f"deny_{req_id}")
-                )
-                self.bot.send_message(self.chat_id, f"⚠️ *Security Approval Required*\n\nThe agent wants to run:\n`{command}`", parse_mode="Markdown", reply_markup=markup)
                 
             elif event_type == "agent_status":
                 status = data.get("status", "")

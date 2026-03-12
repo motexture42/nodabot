@@ -1,13 +1,11 @@
-# Child Agent Spawning Tool - Swarm Teamwork
+# Child Agent Spawning Tool - Pure Sequential Teamwork
 import json
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from .base import BaseTool
 
 class SpawnTool(BaseTool):
     """
-    Spawns specialized child agents to execute complex sub-tasks.
-    Supports running them sequentially (sharing state) or in parallel (for speed).
+    Spawns specialized child agents in a sequential chain.
+    Each agent sees the results of all previous agents in the chain.
     """
     def __init__(self, tools_factory=None, emit_cb=None):
         self.tools_factory = tools_factory
@@ -25,9 +23,10 @@ class SpawnTool(BaseTool):
     def description(self) -> str:
         return (
             "CRITICAL for complex tasks: Use this to delegate work to specialized sub-agents. "
-            "Act as a PROJECT MANAGER. Spawn a Researcher, Coder, Writer, or QA expert. "
-            "You can run them in 'parallel' for speed (e.g. researching 3 different things at once) "
-            "or 'sequential' if one agent needs the output of the previous agent."
+            "Instead of doing everything yourself, act as a PROJECT MANAGER. "
+            "Spawn a Researcher, Coder, Writer, or QA expert. "
+            "This avoids context-window limits and produces higher-quality, verified results. "
+            "Each agent in the list will run sequentially, passing their findings to the next."
         )
 
     @property
@@ -35,11 +34,6 @@ class SpawnTool(BaseTool):
         return {
             "type": "object",
             "properties": {
-                "mode": {
-                    "type": "string", 
-                    "enum": ["sequential", "parallel"],
-                    "description": "How to execute the tasks."
-                },
                 "tasks": {
                     "type": "array",
                     "items": {
@@ -52,54 +46,29 @@ class SpawnTool(BaseTool):
                     }
                 }
             },
-            "required": ["tasks", "mode"]
+            "required": ["tasks"]
         }
 
     def _run_single(self, task: str, role: str, blackboard: str = "") -> str:
         from core.agent import Agent
-        import uuid
-        
-        session_id = f"swarm-{role.lower()}-{str(uuid.uuid4())[:4]}"
+        session_id = f"swarm-{role.lower()}"
         child_name = f"{role.capitalize()} Agent"
-        all_tools = self.tools_factory() if self.tools_factory else []
-        
-        # Scope tools by persona for safety and modularity
-        allowed_tools = {
-            "researcher": ["web_search", "fetch_url", "browser_controller", "knowledge_base"],
-            "coder": ["local_terminal", "file_manager", "execute_python", "knowledge_base"],
-            "writer": ["file_manager", "knowledge_base"],
-            "qa": ["local_terminal", "file_manager", "execute_python", "knowledge_base", "browser_controller", "web_search"]
-        }
-        
-        child_tools = all_tools
-        if role.lower() in allowed_tools:
-            allowed = allowed_tools[role.lower()]
-            child_tools = [t for t in all_tools if t.name in allowed]
+        child_tools = self.tools_factory() if self.tools_factory else []
         
         self._emit("agent_start", {"agent": child_name, "task": task})
         
         child_agent = Agent(tools=child_tools, session_id=session_id, emit_cb=self.emit_cb, name=child_name)
         
         role_prompts = {
-            "researcher": "You are an autonomous Researcher. Gather verified facts using your tools.",
-            "coder": "You are an autonomous Software Engineer. Write, execute, and test code.",
-            "writer": "You are an autonomous Writer. Format and summarize data into high-quality text.",
-            "qa": "You are an autonomous QA/Critic. Test and find flaws in the work."
+            "researcher": "You are a Researcher. Gather verified facts using tools.",
+            "coder": "You are a Coder. Write and test code. Use data from previous agents.",
+            "writer": "You are a Writer. Format and summarize data into high-quality text.",
+            "qa": "You are a QA/Critic. Test and find flaws in the work done so far."
         }
         
-        context_msg = f"\nTEAM BOARD (Context):\n{blackboard}" if blackboard else ""
-        sys_msg = role_prompts.get(role.lower(), f"You are an autonomous {role}.")
-        
-        # Override the child agent's system prompt to enforce strict constraints
-        child_agent.history[0]["content"] = f"""{sys_msg}{context_msg}
-
-CRITICAL RULES FOR YOU:
-1. You are a Sub-Agent. You MUST NOT use the `spawn_child_agent` tool. Do the work yourself.
-2. Be completely autonomous. Execute tools until the task is complete.
-3. Do NOT ask the user for input. The user is not here. If you hit an error, try another way.
-4. When you are finished, output your final report as standard text.
-
-Task: {task}"""
+        context_msg = f"\nTEAM BOARD (Results from previous steps):\n{blackboard}" if blackboard else ""
+        sys_msg = role_prompts.get(role.lower(), f"You are a specialized {role}.")
+        child_agent.history[0]["content"] = f"{sys_msg}{context_msg}\n\nTask: {task}\nBe concise. Complete your task and report back."
 
         try:
             result = child_agent.run(task, is_internal=True)
@@ -111,26 +80,17 @@ Task: {task}"""
 
     def run(self, **kwargs) -> str:
         tasks = kwargs.get("tasks", [])
-        mode = kwargs.get("mode", "sequential")
-        
-        if not tasks: return "Error: No tasks provided."
+        if not tasks: return "Error: No tasks."
 
+        blackboard = ""
         results = []
         
-        if mode == "sequential":
-            blackboard = ""
-            for t in tasks:
-                res = self._run_single(t["task"], t["role"], blackboard)
-                results.append(res)
-                blackboard += f"\n{res}\n"
-        else:
-            # Parallel mode
-            with ThreadPoolExecutor(max_workers=min(len(tasks), 8)) as executor:
-                futures = []
-                for t in tasks:
-                    futures.append(executor.submit(self._run_single, t["task"], t["role"], ""))
-                
-                for future in futures:
-                    results.append(future.result())
+        print(f"[>>>] Swarm: Sequential Chain Started ({len(tasks)} steps)")
+        
+        for t in tasks:
+            res = self._run_single(t["task"], t["role"], blackboard)
+            results.append(res)
+            # Carry result forward to the next agent
+            blackboard += f"\n{res}\n"
 
         return "\n\n---\n\n".join(results)
