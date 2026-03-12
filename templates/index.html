@@ -222,6 +222,9 @@
                 } else if (toolName === 'execute_shell') {
                     text = 'Running shell command...';
                     icon = 'fa-terminal text-emerald-400';
+                } else if (toolName === 'spawn_child_agent') {
+                    text = 'Spawning Swarm Agents...';
+                    icon = 'fa-network-wired animate-pulse text-purple-400';
                 }
             }
             
@@ -535,6 +538,15 @@
             const desc = node.querySelector('.task-desc');
             if(desc && data.task) desc.innerHTML = `<i class="fa-solid fa-bullseye text-slate-600 mr-1"></i> ${escapeHTML(data.task)}`;
             scrollToBottom(flowTab);
+            
+            // Pulse the Swarm tab button to alert the user
+            const flowBtn = document.querySelector('button[onclick*="flow"]');
+            if (flowBtn && !flowBtn.classList.contains('active')) {
+                flowBtn.classList.add('animate-pulse', 'text-purple-400');
+                setTimeout(() => {
+                    flowBtn.classList.remove('animate-pulse', 'text-purple-400');
+                }, 3000);
+            }
         });
 
         socket.on('agent_end', data => {
