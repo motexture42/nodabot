@@ -58,5 +58,7 @@ class LLMProvider:
             
             return result
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             error_msg = f"LLM Error: {str(e)}"
             return {"role": "assistant", "content": error_msg}
