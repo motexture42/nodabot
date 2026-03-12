@@ -322,6 +322,15 @@ DISCIPLINE RULES:
                 if not tool_calls:
                     break
 
+                # If the agent asked a question (content was not empty) AND it tried to use tools,
+                # we should pause execution to wait for the user's answer, unless the tools are purely internal.
+                # To prevent it from going crazy when it asks for clarification.
+                if content.strip() and tool_calls and not is_internal:
+                    # Check if the text seems to be asking a question (ends with '?' or requests feedback)
+                    if "?" in content or "reply with" in content.lower() or "clarification" in content.lower():
+                        self._emit("system_msg", {"message": "⏸ Execution paused awaiting user clarification."})
+                        break
+
                 # 5. EXECUTE TOOLS
                 for call in tool_calls:
                     tool_name = call["function"]["name"]
