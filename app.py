@@ -20,6 +20,16 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 task_queue = queue.Queue()
 
 def enqueue_task(msg):
+    if msg.strip().lower() == 'stop':
+        # Instantly interrupt any pending actions and clear the queue
+        while not task_queue.empty():
+            try: task_queue.get_nowait()
+            except: pass
+        wrapped_emit('system_msg', {'message': '🛑 Agent stopped by user. Queue cleared.'})
+        # We append a system interruption to the agent's history directly
+        main_agent.history.append({"role": "system", "content": "USER INTERRUPTED THE AGENT. STOP YOUR CURRENT TASK IMMEDIATELY."})
+        return
+        
     if msg == '/reset': 
         # For resets, we can clear the queue to prevent old tasks from running
         while not task_queue.empty():
@@ -27,6 +37,9 @@ def enqueue_task(msg):
             except: pass
         task_queue.put(msg)
     else:
+        # Provide immediate UI feedback that the task was queued
+        if main_agent.is_busy:
+            wrapped_emit('system_msg', {'message': f'⏳ Task queued...'})
         # Enqueue the task for the worker thread
         task_queue.put(msg)
 
