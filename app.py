@@ -10,6 +10,7 @@ from utils.tools import get_tools
 from utils.watcher_manager import WatcherManager
 from utils.app_helpers import emit_event, heartbeat_loop
 from interfaces.telegram_bot import TelegramInterface
+from utils.approvals import approval_manager
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = Config.SECRET_KEY
@@ -127,6 +128,17 @@ def handle_message(data):
     msg = data.get('message', '')
     if msg:
         enqueue_task(msg)
+
+@socketio.on('approval_resolve')
+def handle_approval_resolve(data):
+    req_id = data.get('id')
+    approved = data.get('approved', False)
+    if req_id:
+        approval_manager.resolve(req_id, approved)
+        if approved:
+            wrapped_emit('system_msg', {'message': '✅ Command approved.'})
+        else:
+            wrapped_emit('system_msg', {'message': '❌ Command denied.'})
 
 if __name__ == '__main__':
     print(f"Starting NodaBot UI on http://127.0.0.1:{Config.PORT}")

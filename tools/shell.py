@@ -1,11 +1,15 @@
 # Shell Command Tool
 import subprocess
 from .base import BaseTool
+from utils.approvals import approval_manager
 
 class ShellTool(BaseTool):
     """
     Executes shell commands and returns output.
     """
+    def __init__(self, emit_cb=None):
+        self.emit_cb = emit_cb
+
     @property
     def name(self) -> str:
         return "local_terminal"
@@ -30,6 +34,17 @@ class ShellTool(BaseTool):
     def run(self, **kwargs) -> str:
         command = kwargs.get("command")
         import os
+        
+        # Human-in-the-loop security check
+        destructive_keywords = ["rm ", "mv ", "cp ", "sed ", "git ", "chmod ", "chown ", "kill ", "sudo ", "reboot", "shutdown"]
+        if any(d in command.lower() for d in destructive_keywords):
+            if self.emit_cb:
+                self.emit_cb('system_msg', {'message': f'⚠️ Security: Command requires approval...'})
+            
+            approved = approval_manager.request_approval(command, self.emit_cb)
+            if not approved:
+                return f"Error: Command execution denied by user or timed out."
+
         home_dir = os.path.expanduser("~")
         try:
             result = subprocess.run(

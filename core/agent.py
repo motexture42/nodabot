@@ -134,10 +134,25 @@ DISCIPLINE RULES:
     def _prune_history(self, max_tokens: int = 8000):
         total_tokens = sum(self._count_tokens(str(m.get("content", ""))) for m in self.history)
         if total_tokens > max_tokens and len(self.history) > 10:
-            for i in range(1, len(self.history) - 5):
-                if self.history[i].get("role") == "tool" and self.history[i].get("content") != "(Old tool output removed)":
-                    self.history[i]["content"] = "(Old tool output removed)"
-                    break
+            self._emit("system_msg", {"message": "🧠 Compacting and summarizing older memory..."})
+            
+            # Extract oldest 5 messages (skip the system prompt at index 0)
+            old_context = self.history[1:6]
+            context_str = json.dumps(old_context)
+            
+            summary_prompt = f"Summarize the following old conversation context into a concise bulleted list of facts, actions taken, and findings so far. Keep it under 200 words:\n\n{context_str}"
+            
+            try:
+                # We can call the LLM synchronously here since we are in the worker thread
+                res = self.llm.chat_completion([{"role": "user", "content": summary_prompt}], tools=None)
+                summary = res.get("content", "Failed to summarize.")
+                
+                # Replace the old context with a single summary message
+                self.history = [self.history[0]] + [{"role": "system", "content": f"PREVIOUS CONTEXT SUMMARY:\n{summary}"}] + self.history[6:]
+            except Exception as e:
+                logger.error(f"Memory compaction failed: {e}")
+                # Fallback to deletion
+                del self.history[1:6]
 
     def _reflect(self, last_response: dict) -> str:
         content = last_response.get("content", "")

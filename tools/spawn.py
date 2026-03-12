@@ -1,11 +1,13 @@
-# Child Agent Spawning Tool - Pure Sequential Teamwork
+# Child Agent Spawning Tool - Swarm Teamwork
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from .base import BaseTool
 
 class SpawnTool(BaseTool):
     """
-    Spawns specialized child agents in a sequential chain.
-    Each agent sees the results of all previous agents in the chain.
+    Spawns specialized child agents to execute complex sub-tasks.
+    Supports running them sequentially (sharing state) or in parallel (for speed).
     """
     def __init__(self, tools_factory=None, emit_cb=None):
         self.tools_factory = tools_factory
@@ -23,10 +25,9 @@ class SpawnTool(BaseTool):
     def description(self) -> str:
         return (
             "CRITICAL for complex tasks: Use this to delegate work to specialized sub-agents. "
-            "Instead of doing everything yourself, act as a PROJECT MANAGER. "
-            "Spawn a Researcher, Coder, Writer, or QA expert. "
-            "This avoids context-window limits and produces higher-quality, verified results. "
-            "Each agent in the list will run sequentially, passing their findings to the next."
+            "Act as a PROJECT MANAGER. Spawn a Researcher, Coder, Writer, or QA expert. "
+            "You can run them in 'parallel' for speed (e.g. researching 3 different things at once) "
+            "or 'sequential' if one agent needs the output of the previous agent."
         )
 
     @property
@@ -34,6 +35,11 @@ class SpawnTool(BaseTool):
         return {
             "type": "object",
             "properties": {
+                "mode": {
+                    "type": "string", 
+                    "enum": ["sequential", "parallel"],
+                    "description": "How to execute the tasks."
+                },
                 "tasks": {
                     "type": "array",
                     "items": {
@@ -46,12 +52,14 @@ class SpawnTool(BaseTool):
                     }
                 }
             },
-            "required": ["tasks"]
+            "required": ["tasks", "mode"]
         }
 
     def _run_single(self, task: str, role: str, blackboard: str = "") -> str:
         from core.agent import Agent
-        session_id = f"swarm-{role.lower()}"
+        import uuid
+        
+        session_id = f"swarm-{role.lower()}-{str(uuid.uuid4())[:4]}"
         child_name = f"{role.capitalize()} Agent"
         child_tools = self.tools_factory() if self.tools_factory else []
         
@@ -60,15 +68,17 @@ class SpawnTool(BaseTool):
         child_agent = Agent(tools=child_tools, session_id=session_id, emit_cb=self.emit_cb, name=child_name)
         
         role_prompts = {
-            "researcher": "You are a Researcher. Gather verified facts using tools.",
-            "coder": "You are a Coder. Write and test code. Use data from previous agents.",
-            "writer": "You are a Writer. Format and summarize data into high-quality text.",
-            "qa": "You are a QA/Critic. Test and find flaws in the work done so far."
+            "researcher": "You are an autonomous Researcher. Gather verified facts using your tools.",
+            "coder": "You are an autonomous Coder. Write and test code. Use data provided.",
+            "writer": "You are an autonomous Writer. Format and summarize data into high-quality text.",
+            "qa": "You are an autonomous QA/Critic. Test and find flaws in the work."
         }
         
-        context_msg = f"\nTEAM BOARD (Results from previous steps):\n{blackboard}" if blackboard else ""
-        sys_msg = role_prompts.get(role.lower(), f"You are a specialized {role}.")
-        child_agent.history[0]["content"] = f"{sys_msg}{context_msg}\n\nTask: {task}\nBe concise. Complete your task and report back."
+        context_msg = f"\nTEAM BOARD (Context):\n{blackboard}" if blackboard else ""
+        sys_msg = role_prompts.get(role.lower(), f"You are an autonomous {role}.")
+        
+        # Override the child agent's system prompt
+        child_agent.history[0]["content"] = f"{sys_msg}{context_msg}\n\nTask: {task}\nBe completely autonomous. Execute tools until the task is complete, then provide your final report."
 
         try:
             result = child_agent.run(task, is_internal=True)
@@ -80,17 +90,26 @@ class SpawnTool(BaseTool):
 
     def run(self, **kwargs) -> str:
         tasks = kwargs.get("tasks", [])
-        if not tasks: return "Error: No tasks."
+        mode = kwargs.get("mode", "sequential")
+        
+        if not tasks: return "Error: No tasks provided."
 
-        blackboard = ""
         results = []
         
-        print(f"[>>>] Swarm: Sequential Chain Started ({len(tasks)} steps)")
-        
-        for t in tasks:
-            res = self._run_single(t["task"], t["role"], blackboard)
-            results.append(res)
-            # Carry result forward to the next agent
-            blackboard += f"\n{res}\n"
+        if mode == "sequential":
+            blackboard = ""
+            for t in tasks:
+                res = self._run_single(t["task"], t["role"], blackboard)
+                results.append(res)
+                blackboard += f"\n{res}\n"
+        else:
+            # Parallel mode
+            with ThreadPoolExecutor(max_workers=min(len(tasks), 8)) as executor:
+                futures = []
+                for t in tasks:
+                    futures.append(executor.submit(self._run_single, t["task"], t["role"], ""))
+                
+                for future in futures:
+                    results.append(future.result())
 
         return "\n\n---\n\n".join(results)
