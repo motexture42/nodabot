@@ -216,7 +216,9 @@ DISCIPLINE RULES:
                     self.history.append({"role": "tool", "tool_call_id": call.get("id"), "name": call["function"]["name"], "content": "Error: Interrupted by user."})
 
             self.history.append({"role": "user", "content": user_prompt})
-            self._emit("agent_start", {"agent": self.name, "task": user_prompt[:50]})
+            
+            # Emit full task without truncating to 50 chars so the UI can decide how to handle wrapping
+            self._emit("agent_start", {"agent": self.name, "task": user_prompt})
 
             turn = 0
             while True:
