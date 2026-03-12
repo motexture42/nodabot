@@ -32,7 +32,8 @@ class TelegramInterface:
         if self.bot:
             print("Starting Telegram bot...")
             # We catch exceptions to prevent the bot from crashing on network timeouts
-            threading.Thread(target=self.bot.infinity_polling, kwargs={"timeout": 10, "long_polling_timeout": 5, "logger_level": 30}, daemon=True).start()
+            # Using default timeouts instead of custom ones to prevent urllib3 ReadTimeoutError
+            threading.Thread(target=self.bot.infinity_polling, kwargs={"logger_level": 30}, daemon=True).start()
             
     def _send_long_message(self, text):
         max_len = 4000
