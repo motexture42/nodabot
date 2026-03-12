@@ -78,13 +78,13 @@
                 </div>
                 
                 <!-- Mission Status Card -->
-                <div id="mission-board" class="relative overflow-hidden bg-slate-800/60 border border-slate-600 rounded-xl p-3.5 shadow-md flex-col gap-2.5 backdrop-blur-sm transition-all duration-300 flex">
+                <div id="mission-board" class="hidden relative overflow-hidden bg-slate-800/60 border border-slate-600 rounded-xl p-3.5 shadow-md flex-col gap-2.5 backdrop-blur-sm transition-all duration-300">
                     <div class="absolute left-0 top-0 w-1.5 h-full bg-gradient-to-b from-blue-500 to-emerald-400 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
                     <div class="flex items-start gap-3 pl-3">
                         <div class="mt-0.5"><i class="fa-solid fa-flag-checkered text-blue-400 text-lg"></i></div>
                         <div class="flex-1">
                             <div class="text-[10px] uppercase font-bold text-blue-400/80 tracking-widest mb-0.5">Current Mission</div>
-                            <div id="mission-text" class="text-sm font-bold text-white leading-tight line-clamp-2">Awaiting orders...</div>
+                            <div id="mission-text" class="text-sm font-bold text-white leading-tight line-clamp-2">None</div>
                         </div>
                     </div>
                     <div class="h-[1px] w-full bg-slate-700/60 ml-3"></div>
@@ -92,7 +92,7 @@
                         <div class="mt-0.5"><i class="fa-solid fa-forward-step text-emerald-400 text-base"></i></div>
                         <div class="flex-1">
                             <div class="text-[10px] uppercase font-bold text-emerald-400/80 tracking-widest mb-0.5">Active Task</div>
-                            <div id="next-step-text" class="text-[13px] font-medium text-slate-300 leading-tight line-clamp-2">Idle</div>
+                            <div id="next-step-text" class="text-[13px] font-medium text-slate-300 leading-tight line-clamp-2">Awaiting input...</div>
                         </div>
                     </div>
                 </div>
@@ -452,11 +452,11 @@
 
         socket.on('mission_update', data => {
             if (data.mission) {
+                missionBoard.classList.remove('hidden');
                 missionText.innerText = data.mission;
                 nextStepText.innerText = data.next_step || 'Planning...';
             } else {
-                missionText.innerText = 'Awaiting orders...';
-                nextStepText.innerText = 'Idle';
+                missionBoard.classList.add('hidden');
             }
         });
 
@@ -582,10 +582,7 @@
                 watchersBox.innerHTML = '<p class="text-slate-500 italic text-sm">No active watchers.</p>';
                 terminalBox.innerHTML = '';
                 artifactsBox.innerHTML = '';
-                
-                missionText.innerText = 'Awaiting orders...';
-                nextStepText.innerText = 'Idle';
-                
+                missionBoard.classList.add('hidden');
                 removeStatusBubble();
                 turnCounter.innerText = "Idle";
                 

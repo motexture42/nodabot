@@ -217,12 +217,6 @@ DISCIPLINE RULES:
             self.history.append({"role": "user", "content": user_prompt})
             self._emit("agent_start", {"agent": self.name, "task": user_prompt[:50]})
 
-            # Optimistically set mission to user prompt if idle
-            if not self.current_mission and not is_internal:
-                self.current_mission = user_prompt[:100] + ("..." if len(user_prompt) > 100 else "")
-                self.next_planned_step = "Analyzing request..."
-                self._emit("mission_update", {"mission": self.current_mission, "next_step": self.next_planned_step})
-
             turn = 0
             while True:
                 turn += 1
@@ -310,10 +304,6 @@ DISCIPLINE RULES:
                     self._emit_reply(content)
 
                 if not tool_calls:
-                    # Auto-clear mission if we just gave a direct answer without a formal long-running mission
-                    if not any(x in content for x in ["MISSION:", "NEXT_STEP:"]):
-                        self.current_mission = None
-                        self.next_planned_step = None
                     break
 
                 # 5. EXECUTE TOOLS
@@ -357,13 +347,7 @@ DISCIPLINE RULES:
 
             self.memory.save(self.session_id, self.history)
             return content
-        finally:
+        finally: 
             self._emit("agent_status", {"agent": self.name, "status": "idle"})
-
-            # If no explicit mission is active, reset step to Idle
-            if not self.current_mission:
-                self.next_planned_step = None
-
-            self._emit("mission_update", {"mission": self.current_mission, "next_step": self.next_planned_step})
             self.is_busy = False
             self.lock.release()
