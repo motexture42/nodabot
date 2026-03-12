@@ -51,7 +51,8 @@ class SpawnTool(BaseTool):
 
     def _run_single(self, task: str, role: str, blackboard: str = "") -> str:
         from core.agent import Agent
-        session_id = f"swarm-{role.lower()}"
+        import uuid
+        session_id = f"swarm-{role.lower()}-{str(uuid.uuid4())[:4]}"
         child_name = f"{role.capitalize()} Agent"
         child_tools = self.tools_factory() if self.tools_factory else []
         
@@ -68,7 +69,9 @@ class SpawnTool(BaseTool):
         
         context_msg = f"\nTEAM BOARD (Results from previous steps):\n{blackboard}" if blackboard else ""
         sys_msg = role_prompts.get(role.lower(), f"You are a specialized {role}.")
-        child_agent.history[0]["content"] = f"{sys_msg}{context_msg}\n\nTask: {task}\nBe concise. Complete your task and report back."
+        
+        # APPEND to the existing system prompt so the core discipline rules are preserved
+        child_agent.history[0]["content"] += f"\n\n--- SUB-AGENT DIRECTIVE ---\n{sys_msg}{context_msg}\n\nTask: {task}\nCRITICAL: Be completely autonomous. You MUST NOT ask the user for input. You MUST NOT use `spawn_child_agent` yourself. Execute tools until the task is complete, then provide your final report."
 
         try:
             result = child_agent.run(task, is_internal=True)
