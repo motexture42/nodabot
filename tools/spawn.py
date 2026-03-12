@@ -61,7 +61,20 @@ class SpawnTool(BaseTool):
         
         session_id = f"swarm-{role.lower()}-{str(uuid.uuid4())[:4]}"
         child_name = f"{role.capitalize()} Agent"
-        child_tools = self.tools_factory() if self.tools_factory else []
+        all_tools = self.tools_factory() if self.tools_factory else []
+        
+        # Scope tools by persona for safety and modularity
+        allowed_tools = {
+            "researcher": ["web_search", "fetch_url", "browser_controller", "knowledge_base"],
+            "coder": ["local_terminal", "file_manager", "execute_python", "knowledge_base"],
+            "writer": ["file_manager", "knowledge_base"],
+            "qa": ["local_terminal", "file_manager", "execute_python", "knowledge_base", "browser_controller", "web_search"]
+        }
+        
+        child_tools = all_tools
+        if role.lower() in allowed_tools:
+            allowed = allowed_tools[role.lower()]
+            child_tools = [t for t in all_tools if t.name in allowed]
         
         self._emit("agent_start", {"agent": child_name, "task": task})
         
