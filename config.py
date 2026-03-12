@@ -26,5 +26,4 @@ class Config:
     SESSIONS_DIR = os.getenv("SESSIONS_DIR", "sessions")
     
     # Execution Limits
-    MAX_TURNS = int(os.getenv("MAX_TURNS", 15))
     TIMEOUT = int(os.getenv("TIMEOUT", 300))

@@ -217,8 +217,10 @@ DISCIPLINE RULES:
             self.history.append({"role": "user", "content": user_prompt})
             self._emit("agent_start", {"agent": self.name, "task": user_prompt[:50]})
 
-            for turn in range(Config.MAX_TURNS):
-                self._emit("turn_update", {"agent": self.name, "turn": turn + 1})
+            turn = 0
+            while True:
+                turn += 1
+                self._emit("turn_update", {"agent": self.name, "turn": turn})
                 self._prune_history()
                 self._emit("agent_status", {"agent": self.name, "status": "thinking"})
                 
