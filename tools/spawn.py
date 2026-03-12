@@ -82,7 +82,7 @@ class SpawnTool(BaseTool):
         
         role_prompts = {
             "researcher": "You are an autonomous Researcher. Gather verified facts using your tools.",
-            "coder": "You are an autonomous Coder. Write and test code. Use data provided.",
+            "coder": "You are an autonomous Software Engineer. Write, execute, and test code.",
             "writer": "You are an autonomous Writer. Format and summarize data into high-quality text.",
             "qa": "You are an autonomous QA/Critic. Test and find flaws in the work."
         }
@@ -90,8 +90,16 @@ class SpawnTool(BaseTool):
         context_msg = f"\nTEAM BOARD (Context):\n{blackboard}" if blackboard else ""
         sys_msg = role_prompts.get(role.lower(), f"You are an autonomous {role}.")
         
-        # Override the child agent's system prompt
-        child_agent.history[0]["content"] = f"{sys_msg}{context_msg}\n\nTask: {task}\nBe completely autonomous. Execute tools until the task is complete, then provide your final report."
+        # Override the child agent's system prompt to enforce strict constraints
+        child_agent.history[0]["content"] = f"""{sys_msg}{context_msg}
+
+CRITICAL RULES FOR YOU:
+1. You are a Sub-Agent. You MUST NOT use the `spawn_child_agent` tool. Do the work yourself.
+2. Be completely autonomous. Execute tools until the task is complete.
+3. Do NOT ask the user for input. The user is not here. If you hit an error, try another way.
+4. When you are finished, output your final report as standard text.
+
+Task: {task}"""
 
         try:
             result = child_agent.run(task, is_internal=True)
