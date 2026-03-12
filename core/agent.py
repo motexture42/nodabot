@@ -222,6 +222,11 @@ DISCIPLINE RULES:
 
             turn = 0
             while True:
+                # Check for asynchronous interrupts
+                if self.history and self.history[-1].get("content") == "USER INTERRUPTED THE AGENT. STOP YOUR CURRENT TASK IMMEDIATELY.":
+                    self._emit("system_msg", {"message": "🛑 Agent loop terminated by user."})
+                    break
+
                 turn += 1
                 self._emit("turn_update", {"agent": self.name, "turn": turn})
                 self._prune_history()
