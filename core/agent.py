@@ -61,8 +61,14 @@ class Agent:
             self._init_history()
 
     def _init_history(self):
+        import glob
+        from pathlib import Path
+        skills_dir = Path("skills")
+        available_skills = [f.stem for f in skills_dir.glob("*.md")] if skills_dir.exists() else []
+        skills_str = ", ".join(available_skills) if available_skills else "None"
+
         self.history = [
-            {"role": "system", "content": """You are NodaBot (NB), an autonomous DEV agent running directly on the user's bare-metal OS.
+            {"role": "system", "content": f"""You are NodaBot (NB), an autonomous DEV agent running directly on the user's bare-metal OS.
 You have been granted tools to interact with the system. You MUST use these tools (function calls) to perform actions. 
 If the user asks you to list a directory or read a file, DO NOT pretend to do it or hallucinate the output. You MUST invoke the `local_terminal` or `file_manager` function call to get the real data.
 
@@ -76,7 +82,9 @@ DISCIPLINE RULES:
 3. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning/actions, strictly separated from conversational text.
 4. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach.
 5. SWARM DELEGATION: If a task is complex or requires multiple steps, you MUST delegate it using `spawn_child_agent`. This keeps your context clean and produces better results.
-6. SKILLS: Use the `activate_skill` tool to dynamically load expert knowledge or specific workflows into your context when working on specialized tasks."""}
+6. SKILLS: Use the `activate_skill` tool to dynamically load expert knowledge into your context. 
+   - AVAILABLE SKILLS TO LOAD: {skills_str}
+   - ALWAYS load a relevant skill before starting a specialized task (e.g. if writing a dockerfile, load docker-expert)."""}
         ]
         logger.info(f"Started new session {self.session_id}.")
 
