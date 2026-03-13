@@ -28,6 +28,7 @@ class LLMProvider:
                 "model": model_override or self.model,
                 "messages": messages,
                 "stream": False,
+                "stop": ["<|im_end|>", "<|im_start|>", "user\n", "User:"]
             }
             
             if tools:

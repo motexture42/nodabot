@@ -334,8 +334,14 @@ DISCIPLINE RULES:
                 # 5. EXECUTE TOOLS
                 for call in tool_calls:
                     tool_name = call["function"]["name"]
-                    try: tool_args = json.loads(call["function"]["arguments"])
-                    except: continue
+                    
+                    try: 
+                        tool_args = json.loads(call["function"]["arguments"])
+                    except Exception as e:
+                        error_msg = f"Error: Failed to parse JSON arguments for tool '{tool_name}'. {str(e)}"
+                        self.history.append({"role": "tool", "tool_call_id": call.get("id"), "name": tool_name, "content": error_msg})
+                        self._emit("system_msg", {"message": f"⚠️ {error_msg}"})
+                        continue
 
                     self._emit("agent_status", {"agent": self.name, "status": "executing", "tool": tool_name, "args": tool_args})
                     self._emit("tool_start", {"agent": self.name, "tool": tool_name, "args": tool_args})
