@@ -149,22 +149,6 @@ DISCIPLINE RULES:
                     self.history[i]["content"] = "(Old tool output removed)"
                     break
 
-    def _reflect(self, last_response: dict) -> str:
-        content = last_response.get("content", "")
-        tool_calls = last_response.get("tool_calls", [])
-        if not content and not tool_calls: return None
-        reflection_prompt = (
-            "SYSTEM: You are the 'Internal Critic'. Evaluate the plan.\n"
-            f"PROPOSED ACTION:\n{content}\nTools: {[t['function']['name'] for t in tool_calls]}\n\n"
-            "TASK: Reply ONLY with 'APPROVED' or provide a concise 'CRITICISM' and 'SUGGESTED_FIX'."
-        )
-        try:
-            res = self.llm.chat_completion([{"role": "user", "content": reflection_prompt}], tools=None)
-            criticism = self._clean_content(res.get("content", ""))
-            if "APPROVED" in criticism.upper() and len(criticism) < 20: return None
-            return criticism
-        except: return None
-
     def _trigger_debugger(self, error_msg: str):
         self.is_debugging = True
         self._emit("system_msg", {"message": "🛠 Entering Debug Mode..."})
@@ -266,39 +250,6 @@ DISCIPLINE RULES:
                     break
 
                 tool_calls = response.get("tool_calls", [])
-
-                # 3. REFLECTION
-                reflection = None
-                requires_reflection = False
-                for t in tool_calls:
-                    name = t["function"]["name"]
-                    if name == "file_manager":
-                        try:
-                            args = json.loads(t["function"]["arguments"])
-                            if args.get("action") in ["write", "append"]:
-                                requires_reflection = True
-                        except: pass
-                    elif name == "local_terminal":
-                        try:
-                            args = json.loads(t["function"]["arguments"])
-                            cmd = args.get("command", "").lower()
-                            # Only reflect on potentially destructive commands
-                            if any(d in cmd for d in ["rm ", "mv ", "cp ", "sed ", "git ", "chmod ", "chown "]):
-                                requires_reflection = True
-                        except: pass
-
-                if requires_reflection:
-                    self._emit("agent_status", {"agent": self.name, "status": "reflecting"})
-                    reflection = self._reflect(response)
-                
-                if reflection:
-                    self.history.append(response)
-                    if tool_calls:
-                        for call in tool_calls:
-                            self.history.append({"role": "tool", "tool_call_id": call.get("id"), "name": call["function"]["name"], "content": f"CRITIC: {reflection}"})
-                    else:
-                        self.history.append({"role": "system", "content": f"INTERNAL_FEEDBACK: {reflection}"})
-                    continue 
 
                 # 4. COMMIT RESPONSE
                 self.history.append(response)
