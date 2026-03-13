@@ -370,7 +370,10 @@
             else if (tool === 'execute_python') { icon = 'fa-python text-blue-400'; detail = `Executing Python Script`; }
             else if (tool === 'knowledge_base') { icon = 'fa-database text-green-400'; detail = `${args.action === 'search' ? 'Searching' : 'Indexing'} memory`; }
             else if (tool === 'system_monitor') { icon = 'fa-desktop text-gray-400'; detail = `Checking system health`; }
-            else if (tool === 'manage_jobs') { icon = 'fa-clock text-pink-400'; detail = `${args.action} job: ${args.task || args.job_id}`; }
+            else if (tool === 'manage_jobs') { 
+                icon = 'fa-clock text-pink-400'; 
+                detail = `${args.action} job${args.task || args.job_id ? ': ' + (args.task || args.job_id) : ''}`; 
+            }
             else if (tool === 'manage_watchers') { icon = 'fa-eye text-indigo-400'; detail = `${args.action} watcher on ${args.path || args.watcher_id}`; }
             else if (tool === 'web_search') { icon = 'fa-magnifying-glass text-emerald-400'; detail = `Searching web for <i class="text-emerald-300">"${args.query}"</i>`; }
             else if (tool === 'fetch_url') { icon = 'fa-globe text-cyan-400'; detail = `Fetching <span class="text-cyan-300">${args.url}</span>`; }

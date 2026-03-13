@@ -246,7 +246,7 @@ DISCIPLINE RULES:
                 
                 # Check for error in response dictionary (from LLMProvider.chat_completion catch block)
                 if "LLM Error" in content:
-                    if not is_internal:
+                    if not is_internal or self.name == "Main":
                         self._emit_reply(f"⚠️ {content}")
                     break
 
@@ -268,7 +268,7 @@ DISCIPLINE RULES:
                     self._emit("mission_update", {"mission": self.current_mission, "next_step": self.next_planned_step})
 
                 # Emit content immediately if there is something to say
-                if content.strip() and not is_internal:
+                if content.strip() and (not is_internal or self.name == "Main"):
                     self._emit_reply(content)
 
                 if not tool_calls:
@@ -277,7 +277,7 @@ DISCIPLINE RULES:
                 # If the agent asked a question (content was not empty) AND it tried to use tools,
                 # we should pause execution to wait for the user's answer, unless the tools are purely internal.
                 # To prevent it from going crazy when it asks for clarification.
-                if content.strip() and tool_calls and not is_internal:
+                if content.strip() and tool_calls and (not is_internal or self.name == "Main"):
                     # Check if the text seems to be asking a question (ends with '?' or requests feedback)
                     if "?" in content or "reply with" in content.lower() or "clarification" in content.lower():
                         self._emit("system_msg", {"message": "⏸ Execution paused awaiting user clarification."})
