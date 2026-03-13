@@ -77,14 +77,14 @@ CRITICAL PROTOCOL:
 - NEVER ask the user to run a command for you.
 
 DISCIPLINE RULES:
-1. COMMUNICATION: Simply reply with normal text when you need to speak to the user. Do not use any special messaging tools.
-2. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your user messages. Only output what you want the user to read.
-3. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning/actions, strictly separated from conversational text.
-4. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach.
-5. SWARM DELEGATION: If a task is complex or requires multiple steps, you MUST delegate it using `spawn_child_agent`. This keeps your context clean and produces better results.
-6. SKILLS: Use the `activate_skill` tool to dynamically load expert knowledge into your context. 
+1. SKILLS (MANDATORY): You have access to expert skills. You MUST use the `activate_skill` tool FIRST before attempting any task related to these topics. Do NOT rely on your general knowledge.
    - AVAILABLE SKILLS TO LOAD: {skills_str}
-   - ALWAYS load a relevant skill before starting a specialized task (e.g. if writing a dockerfile, load docker-expert)."""}
+   - Example: If asked to write a Dockerfile, you MUST call `activate_skill` with `name="docker-expert"` BEFORE writing the file.
+2. COMMUNICATION: Simply reply with normal text when you need to speak to the user. Do not use any special messaging tools.
+3. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your user messages. Only output what you want the user to read.
+4. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning/actions, strictly separated from conversational text.
+5. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach.
+6. SWARM DELEGATION: If a task is complex or requires multiple steps, you MUST delegate it using `spawn_child_agent`. This keeps your context clean and produces better results."""}
         ]
         logger.info(f"Started new session {self.session_id}.")
 
