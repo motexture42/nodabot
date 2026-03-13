@@ -37,7 +37,7 @@ class SchedulerTool(BaseTool):
 
     @property
     def description(self) -> str:
-        return "Schedules a task to run later or at a recurring interval. Use this to automate monitoring, reporting, or long-running workflows."
+        return "Schedules a task to run later or at a recurring interval. Use this to automate monitoring, reporting, or long-running workflows. If the user asks for a ONE-TIME reminder or delay, you MUST set max_runs=1."
 
     @property
     def parameters(self) -> dict:
@@ -51,15 +51,15 @@ class SchedulerTool(BaseTool):
                 },
                 "task": {
                     "type": "string",
-                    "description": "The specific instruction or goal for the job."
+                    "description": "The specific instruction or goal for the job (e.g. 'Check the weather and report back')."
                 },
                 "interval_seconds": {
                     "type": "integer",
-                    "description": "How often to run the task."
+                    "description": "How often to run the task, or the delay before it runs."
                 },
                 "max_runs": {
                     "type": "integer",
-                    "description": "How many times to run the job. Set to 0 or omit for forever."
+                    "description": "How many times to run the job. Set to 1 for a one-time delayed task. Set to 0 or omit for forever."
                 },
                 "job_id": {
                     "type": "string",

@@ -171,8 +171,14 @@ DISCIPLINE RULES:
                     if now >= job["next_run"]:
                         self._emit("system_msg", {"message": f"⚡ Running job: {job['task']}"})
                         job["last_run"], job["next_run"] = now, now + job["interval"]
+                        job["runs_completed"] = job.get("runs_completed", 0) + 1
+                        
+                        if job.get("max_runs", 0) > 0 and job["runs_completed"] >= job["max_runs"]:
+                            del scheduler.jobs[jid]
+                            
                         scheduler._save_jobs()
-                        threading.Thread(target=lambda: self.run(f"COMMAND: Execute job: '{job['task']}'", is_internal=True)).start()
+                        self._emit("jobs_update", {"jobs": scheduler.jobs})
+                        threading.Thread(target=lambda: self.run(f"BACKGROUND JOB TRIGGERED: {job['task']}\nYou must now execute this task and report your findings or completion to the user.", is_internal=True)).start()
                         return 
             if self.current_mission:
                 threading.Thread(target=lambda: self.run(f"COMMAND: Continue mission '{self.current_mission}'", is_internal=True)).start()
