@@ -42,8 +42,10 @@ def enqueue_task(msg):
         # User is sending a normal message while agent is running
         if main_agent.is_busy:
             # We append it to history immediately so the agent sees it on the next loop iteration
-            main_agent.history.append({"role": "user", "content": msg})
+            main_agent.history.append({"role": "user", "content": f"USER INTERRUPTION/CORRECTION: {msg}"})
             wrapped_emit('system_msg', {'message': '⚡ User message injected into current context.'})
+            # We MUST ALSO queue it so that if the loop ends, the agent actually answers the message
+            task_queue.put(msg)
         else:
             # Enqueue the task for the worker thread
             task_queue.put(msg)
