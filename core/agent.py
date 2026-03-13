@@ -75,7 +75,8 @@ DISCIPLINE RULES:
 2. NO META-COMMENTARY: Do NOT include 'MISSION:', 'NEXT_STEP:', or technical tool details in your user messages. Only output what you want the user to read.
 3. STATE: You MUST include 'MISSION: <goal>', 'NEXT_STEP: <action>', or 'MISSION_COMPLETE' at the END of your internal reasoning/actions, strictly separated from conversational text.
 4. RESILIENCE: If a tool fails, analyze the error and try a DIFFERENT approach.
-5. SWARM DELEGATION: If a task is complex or requires multiple steps, you MUST delegate it using `spawn_child_agent`. This keeps your context clean and produces better results."""}
+5. SWARM DELEGATION: If a task is complex or requires multiple steps, you MUST delegate it using `spawn_child_agent`. This keeps your context clean and produces better results.
+6. SKILLS: Use the `activate_skill` tool to dynamically load expert knowledge or specific workflows into your context when working on specialized tasks."""}
         ]
         logger.info(f"Started new session {self.session_id}.")
 
