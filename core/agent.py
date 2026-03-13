@@ -38,6 +38,7 @@ class Agent:
         self.current_mission = None
         self.next_planned_step = None
         self.is_busy = False
+        self.interrupt_flag = False
         
         # Resilience State
         self.consecutive_failures = 0
@@ -215,7 +216,7 @@ DISCIPLINE RULES:
             turn = 0
             while True:
                 # Check for asynchronous interrupts
-                if self.history and self.history[-1].get("content") == "USER INTERRUPTED THE AGENT. STOP YOUR CURRENT TASK IMMEDIATELY.":
+                if self.interrupt_flag or (self.history and self.history[-1].get("content") == "USER INTERRUPTED THE AGENT. STOP YOUR CURRENT TASK IMMEDIATELY."):
                     self._emit("system_msg", {"message": "🛑 Agent loop terminated by user."})
                     break
 
@@ -329,7 +330,8 @@ DISCIPLINE RULES:
 
             self.memory.save(self.session_id, self.history)
             return content
-        finally: 
+        finally:
             self._emit("agent_status", {"agent": self.name, "status": "idle"})
             self.is_busy = False
+            self.interrupt_flag = False
             self.lock.release()

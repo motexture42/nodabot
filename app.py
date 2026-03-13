@@ -28,6 +28,7 @@ def enqueue_task(msg):
         wrapped_emit('system_msg', {'message': '🛑 Agent stopped by user. Queue cleared.'})
         # We append a system interruption to the agent's history directly
         main_agent.history.append({"role": "system", "content": "USER INTERRUPTED THE AGENT. STOP YOUR CURRENT TASK IMMEDIATELY."})
+        main_agent.interrupt_flag = True # Direct flag
         return
         
     if msg == '/reset': 
@@ -35,13 +36,17 @@ def enqueue_task(msg):
         while not task_queue.empty():
             try: task_queue.get_nowait()
             except: pass
+        main_agent.interrupt_flag = True
         task_queue.put(msg)
     else:
-        # Provide immediate UI feedback that the task was queued
+        # User is sending a normal message while agent is running
         if main_agent.is_busy:
-            wrapped_emit('system_msg', {'message': f'⏳ Task queued...'})
-        # Enqueue the task for the worker thread
-        task_queue.put(msg)
+            # We append it to history immediately so the agent sees it on the next loop iteration
+            main_agent.history.append({"role": "user", "content": msg})
+            wrapped_emit('system_msg', {'message': '⚡ User message injected into current context.'})
+        else:
+            # Enqueue the task for the worker thread
+            task_queue.put(msg)
 
 telegram_bot = TelegramInterface(enqueue_callback=enqueue_task)
 telegram_bot.start()
